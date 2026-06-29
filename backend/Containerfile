@@ -1,0 +1,20 @@
+FROM docker.io/library/golang:1.22-alpine AS build
+
+WORKDIR /src
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
+
+RUN go build -o /out/coffee-pos ./cmd/coffee-pos
+
+FROM docker.io/library/alpine:3.20
+
+RUN addgroup -S coffee-pos && adduser -S coffee-pos -G coffee-pos
+USER coffee-pos
+
+ENV PORT=8080
+EXPOSE 8080
+
+COPY --from=build /out/coffee-pos /usr/local/bin/coffee-pos
+
+ENTRYPOINT ["coffee-pos", "serve"]
