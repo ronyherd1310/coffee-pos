@@ -14,6 +14,8 @@ const (
 	defaultPort              = "8080"
 	defaultAppEnv            = "development"
 	defaultSessionCookieName = "coffee_pos_session"
+	defaultDBMaxOpenConns    = 3
+	defaultDBMaxIdleConns    = 1
 	jakartaTimezone          = "Asia/Jakarta"
 	productionAppEnv         = "production"
 )
@@ -25,6 +27,12 @@ type Config struct {
 	SessionCookieName   string
 	SessionCookieSecure bool
 	BusinessLocation    *time.Location
+}
+
+type DatabaseConfig struct {
+	URL          string
+	MaxOpenConns int
+	MaxIdleConns int
 }
 
 func Load() (Config, error) {
@@ -68,6 +76,19 @@ func Load() (Config, error) {
 		SessionCookieName:   sessionCookieName,
 		SessionCookieSecure: sessionCookieSecure,
 		BusinessLocation:    location,
+	}, nil
+}
+
+func LoadDatabase() (DatabaseConfig, error) {
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		return DatabaseConfig{}, fmt.Errorf("load database config: DATABASE_URL is required")
+	}
+
+	return DatabaseConfig{
+		URL:          databaseURL,
+		MaxOpenConns: defaultDBMaxOpenConns,
+		MaxIdleConns: defaultDBMaxIdleConns,
 	}, nil
 }
 

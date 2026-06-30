@@ -13,10 +13,14 @@ import (
 	"time"
 
 	httpadapter "coffee-pos/backend/internal/adapters/http"
+	"coffee-pos/backend/internal/adapters/postgres"
 	"coffee-pos/backend/internal/adapters/security"
 	appauth "coffee-pos/backend/internal/app/auth"
 	"coffee-pos/backend/internal/config"
+	"coffee-pos/backend/internal/seed"
 )
+
+const usage = "usage: coffee-pos serve | coffee-pos auth hash-pin <pin> | coffee-pos db migrate | coffee-pos db seed"
 
 func main() {
 	os.Exit(run(context.Background(), os.Args, os.Stdout, os.Stderr))
@@ -24,7 +28,7 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "usage: coffee-pos serve | coffee-pos auth hash-pin <pin>")
+		fmt.Fprintln(stderr, usage)
 		return 2
 	}
 
@@ -49,8 +53,25 @@ func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 		}
 		fmt.Fprintln(stderr, "usage: coffee-pos auth hash-pin <pin>")
 		return 2
+	case "db":
+		if len(args) == 3 && args[2] == "migrate" {
+			if err := runDBMigrate(ctx, stdout); err != nil {
+				fmt.Fprintln(stderr, err)
+				return 1
+			}
+			return 0
+		}
+		if len(args) == 3 && args[2] == "seed" {
+			if err := runDBSeed(ctx, stdout); err != nil {
+				fmt.Fprintln(stderr, err)
+				return 1
+			}
+			return 0
+		}
+		fmt.Fprintln(stderr, "usage: coffee-pos db migrate | coffee-pos db seed")
+		return 2
 	default:
-		fmt.Fprintln(stderr, "usage: coffee-pos serve | coffee-pos auth hash-pin <pin>")
+		fmt.Fprintln(stderr, usage)
 		return 2
 	}
 }
@@ -120,6 +141,47 @@ func runHashPIN(stdout io.Writer, pin string) error {
 	}
 
 	_, err = fmt.Fprintln(stdout, hash)
+	return err
+}
+
+func runDBMigrate(ctx context.Context, stdout io.Writer) error {
+	cfg, err := config.LoadDatabase()
+	if err != nil {
+		return err
+	}
+
+	db, err := postgres.Open(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	result, err := postgres.Migrate(ctx, db, os.DirFS("migrations"))
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintf(stdout, "database migrations complete: %d applied\n", result.Applied)
+	return err
+}
+
+func runDBSeed(ctx context.Context, stdout io.Writer) error {
+	cfg, err := config.LoadDatabase()
+	if err != nil {
+		return err
+	}
+
+	db, err := postgres.Open(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := seed.SeedInitialMenu(ctx, db); err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(stdout, "menu seed complete")
 	return err
 }
 

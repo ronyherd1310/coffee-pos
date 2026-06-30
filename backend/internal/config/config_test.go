@@ -73,6 +73,32 @@ func TestLoadSetsJakartaLocation(t *testing.T) {
 	}
 }
 
+func TestLoadDatabaseRejectsMissingDatabaseURL(t *testing.T) {
+	_, err := LoadDatabase()
+	if err == nil {
+		t.Fatal("expected missing database url to fail")
+	}
+}
+
+func TestLoadDatabaseUsesDatabaseURLAndConservativePoolDefaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://coffee_pos:coffee_pos_dev@localhost:5432/coffee_pos?sslmode=disable")
+
+	cfg, err := LoadDatabase()
+	if err != nil {
+		t.Fatalf("expected database config to load: %v", err)
+	}
+
+	if cfg.URL != "postgres://coffee_pos:coffee_pos_dev@localhost:5432/coffee_pos?sslmode=disable" {
+		t.Fatalf("expected database url from env, got %q", cfg.URL)
+	}
+	if cfg.MaxOpenConns != 3 {
+		t.Fatalf("expected max open conns 3, got %d", cfg.MaxOpenConns)
+	}
+	if cfg.MaxIdleConns != 1 {
+		t.Fatalf("expected max idle conns 1, got %d", cfg.MaxIdleConns)
+	}
+}
+
 func mustHashPIN(t *testing.T, pin string) string {
 	t.Helper()
 
