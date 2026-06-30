@@ -1,7 +1,7 @@
-FROM docker.io/library/golang:1.22-alpine AS build
+FROM docker.io/library/golang:1.25-alpine AS build
 
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
 
@@ -9,6 +9,7 @@ RUN go build -o /out/coffee-pos ./cmd/coffee-pos
 
 FROM docker.io/library/alpine:3.20
 
+RUN apk add --no-cache tzdata
 RUN addgroup -S coffee-pos && adduser -S coffee-pos -G coffee-pos
 USER coffee-pos
 

@@ -1,90 +1,178 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents (Claude Code, Cursor, Copilot, Antigravity, etc.) when working with code in this repository.
+Guidance for AI coding agents working in this repository.
 
-## Repository Overview
+## Project Overview
 
-A collection of skills for Claude.ai and Claude Code for senior software engineers. Skills are packaged instructions and scripts that extend Claude and your coding agents capabilities.
+Coffee POS is a small coffee shop point-of-sale MVP. The current codebase is a foundation scaffold plus the first backend authentication slice:
 
-## OpenCode Integration
+- Go backend API in `backend/`
+- Preact + Vite + TypeScript frontend in `frontend/`
+- Playwright browser smoke tests in `tests/e2e/`
+- Product specs, plans, and reviews in `docs/`
+- Local agent skills in `skills/`
 
-OpenCode uses a **skill-driven execution model** powered by the `skill` tool and this repository's `/skills` directory.
+The MVP direction is defined in `docs/specs/small-coffee-shop-pos-mvp-spec.md`. Treat that spec as product/architecture intent, but verify against current source before changing code because the implementation is still early.
 
-### Core Rules
+## Required Skill Workflow
 
-- If a task matches a skill, you MUST invoke it
-- Skills are located in `skills/<skill-name>/SKILL.md`
-- Never implement directly if a skill applies
-- Always follow the skill instructions exactly (do not partially apply them)
+This repository uses skill-driven execution. If a request matches a skill in `skills/<skill-name>/SKILL.md`, read and follow that skill before implementing.
 
-### Intent → Skill Mapping
+Intent mapping:
 
-The agent should automatically map user intent to skills:
+- Feature or new functionality: `spec-driven-development`, then `incremental-implementation`, then `test-driven-development`
+- Planning or task breakdown: `planning-and-task-breakdown`
+- Bug, failure, or unexpected behavior: `debugging-and-error-recovery`
+- Code review: `code-review-and-quality`
+- Refactoring or simplification: `code-simplification`
+- API or interface design: `api-and-interface-design`
+- UI work: `frontend-ui-engineering`
+- Security-sensitive changes: `security-and-hardening`
+- Documentation or architecture context: `documentation-and-adrs` and/or `context-engineering`
+- Shipping/deployment preparation: `shipping-and-launch`
 
-- Feature / new functionality → `spec-driven-development`, then `incremental-implementation`, `test-driven-development`
-- Planning / breakdown → `planning-and-task-breakdown`
-- Bug / failure / unexpected behavior → `debugging-and-error-recovery`
-- Code review → `code-review-and-quality`
-- Refactoring / simplification → `code-simplification`
-- API or interface design → `api-and-interface-design`
-- UI work → `frontend-ui-engineering`
+Do not skip the skill because a task looks small. Read the relevant `SKILL.md`, follow its workflow, and keep the change scoped.
 
-### Lifecycle Mapping (Implicit Commands)
+## Commands
 
-OpenCode does not support slash commands like `/spec` or `/plan`.
+Backend:
 
-Instead, the agent must internally follow this lifecycle:
+```sh
+go -C backend test ./...
+go -C backend test -tags=integration ./...
+go -C backend vet ./...
+go -C backend run ./cmd/coffee-pos serve
+go -C backend run ./cmd/coffee-pos auth hash-pin <6-digit-pin>
+```
 
-- DEFINE → `spec-driven-development`
-- PLAN → `planning-and-task-breakdown`
-- BUILD → `incremental-implementation` + `test-driven-development`
-- VERIFY → `debugging-and-error-recovery`
-- REVIEW → `code-review-and-quality`
-- SHIP → `shipping-and-launch`
+Frontend:
 
-### Execution Model
+```sh
+npm --prefix frontend install
+npm --prefix frontend run dev
+npm --prefix frontend test
+npm --prefix frontend run check
+npm --prefix frontend run build
+```
 
-For every request:
+End-to-end:
 
-1. Determine if any skill applies (even 1% chance)
-2. Invoke the appropriate skill using the `skill` tool
-3. Follow the skill workflow strictly
-4. Only proceed to implementation after required steps (spec, plan, etc.) are complete
+```sh
+npm install
+npm run test:e2e
+```
 
-### Anti-Rationalization
+Containers:
 
-The following thoughts are incorrect and must be ignored:
+```sh
+podman build -f backend/Containerfile -t coffee-pos-backend:dev backend
+podman build -f frontend/Containerfile -t coffee-pos-frontend:dev frontend
+podman compose up --build
+```
 
-- "This is too small for a skill"
-- "I can just quickly implement this"
-- "I’ll gather context first"
+Run the smallest relevant verification for the change. For backend behavior, prefer targeted `go test` first, then broader `go -C backend test ./...`. For frontend behavior, use Vitest/type checks; use Playwright when browser workflow behavior is involved.
 
-Correct behavior:
+## Runtime Configuration
 
-- Always check for and use skills first
+The backend currently requires:
 
-This ensures OpenCode behaves similarly to Claude Code with full workflow enforcement.
+- `CASHIER_PIN_HASH`: bcrypt hash of the 6-digit cashier PIN. Generate it with `go -C backend run ./cmd/coffee-pos auth hash-pin <pin>`.
+- `PORT`: defaults to `8080`.
+- `APP_ENV`: defaults to `development`; `production` forces secure session cookies.
+- `SESSION_COOKIE_NAME`: defaults to `coffee_pos_session`.
+- `SESSION_COOKIE_SECURE`: optional boolean outside production.
 
-## Orchestration: Personas, Skills, and Commands
+Never embed the cashier PIN or PIN hash in the frontend. Do not commit real secrets or local `.env` files.
 
-This repo has three composable layers. They have different jobs and should not be confused:
+Known deployment gotcha: `compose.yaml` requires `CASHIER_PIN_HASH` from the shell environment. Generate a local development hash before running Compose, and do not store the hash in source control.
 
-- **Skills** (`skills/<name>/SKILL.md`) — workflows with steps and exit criteria. The *how*. Mandatory hops when an intent matches.
-- **Personas** (`agents/<role>.md`) — roles with a perspective and an output format. The *who*.
-- **Slash commands** (`.claude/commands/*.md`) — user-facing entry points. The *when*. The orchestration layer.
+## Architecture
 
-Composition rule: **the user (or a slash command) is the orchestrator. Personas do not invoke other personas.** A persona may invoke skills.
+### Backend
 
-The only multi-persona orchestration pattern this repo endorses is **parallel fan-out with a merge step** — used by `/ship` to run `code-reviewer`, `security-auditor`, and `test-engineer` concurrently and synthesize their reports. Do not build a "router" persona that decides which other persona to call; that's the job of slash commands and intent mapping.
+The backend follows a small hexagonal architecture:
 
-See [docs/agents.md](docs/agents.md) for the decision matrix and [references/orchestration-patterns.md](references/orchestration-patterns.md) for the full pattern catalog.
+```text
+HTTP / CLI adapters  ->  application use cases  ->  domain model/services
+security adapters    ->  application ports      ->  domain model/services
+```
 
-**Claude Code interop:** the personas in `agents/` work as Claude Code subagents (auto-discovered from this plugin's `agents/` directory) and as Agent Teams teammates (referenced by name when spawning). Two platform constraints align with our rules: subagents cannot spawn other subagents, and teams cannot nest. Plugin agents silently ignore the `hooks`, `mcpServers`, and `permissionMode` frontmatter fields.
+Current packages:
 
-## Creating a New Skill
+- `backend/cmd/coffee-pos/`: CLI entrypoint. Supports `serve` and `auth hash-pin`.
+- `backend/internal/domain/auth/`: pure auth domain rules such as PIN format and session expiry.
+- `backend/internal/app/auth/`: auth use cases and port interfaces.
+- `backend/internal/adapters/http/`: `net/http` router, JSON handlers, cookies, auth middleware.
+- `backend/internal/adapters/security/`: bcrypt PIN hashing, session IDs, in-memory sessions, in-memory rate limiting.
+- `backend/internal/config/`: environment loading and validation.
 
-> **Before you start:** run the pre-flight checks in [CONTRIBUTING.md](CONTRIBUTING.md#before-proposing-a-new-skill), search the catalog, check open PRs (`gh pr list --state open`), confirm the idea fits [docs/skill-anatomy.md](docs/skill-anatomy.md), and justify the gap in your PR description. Most new-skill ideas overlap an existing skill or an open PR; prefer extending an existing skill over adding a near-duplicate. CONTRIBUTING.md is the single source of truth for this workflow.
+Backend rules:
 
-Skills in this repo are markdown-first: each lives at `skills/<kebab-case-name>/SKILL.md` with YAML frontmatter (`name`, `description`) and follows the section anatomy (Overview, When to Use, Process, Common Rationalizations, Red Flags, Verification). Add a `scripts/` directory only when the skill ships runnable helpers; most skills are markdown only, and there are no per-skill zip packages.
+- Keep domain packages free of `net/http`, environment access, persistence details, and DTO concerns.
+- Define ports in application packages when use cases need infrastructure.
+- Implement infrastructure in adapters.
+- HTTP handlers should translate requests/responses and call use cases; they should not own business rules.
+- Time-dependent behavior should go through a clock seam/port so Asia/Jakarta behavior is testable.
+- Current sessions and rate limiting are in-memory. Treat that as an early implementation detail, not durable storage.
+- Use Go standard library `net/http` patterns already present in `router.go`.
 
-For the full format, naming conventions, frontmatter rules, supporting-file thresholds, and writing principles, see [docs/skill-anatomy.md](docs/skill-anatomy.md), the single source of truth for skill structure. Do not restate that guidance here, link to it.
+### Frontend
+
+The frontend is a Preact app built with Vite:
+
+- `frontend/src/App.tsx`: current scaffold UI and backend health display.
+- `frontend/src/lib/`: frontend API helpers.
+- `frontend/src/test/`: Vitest setup.
+- `frontend/Caddyfile`: production static serving plus `/api/*` reverse proxy.
+
+Frontend rules:
+
+- Keep production runtime static: Caddy serves built assets; Node/Vite are build-time and dev-time only.
+- Call backend APIs through relative `/api/...` URLs to preserve same-origin cookie behavior.
+- Use TypeScript and small Preact components. Avoid large UI/runtime frameworks for the MVP.
+- Keep CSS plain and responsive unless the project intentionally adopts a different styling approach.
+
+### API And Auth Surface
+
+Current backend endpoints:
+
+- `GET /api/health`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/session`
+- `GET /api/pos/ping` protected by session middleware
+
+Auth behavior:
+
+- Cashier PIN must be exactly 6 ASCII digits.
+- PIN verification is backend-only using bcrypt.
+- Login sets an HttpOnly session cookie.
+- Session expiry is the earlier of 12 hours or the end of the Asia/Jakarta business day.
+- Login failures are rate-limited through the configured rate limiter.
+
+## Documentation Sources
+
+Use these docs before making product or architecture changes:
+
+- `docs/specs/small-coffee-shop-pos-mvp-spec.md`: MVP requirements and target architecture.
+- `docs/plan/`: implementation plans for slices.
+- `docs/reviews/`: prior review findings and risk notes.
+- `docs/ideas/`: original product ideas and refinements.
+
+If implementation differs from docs, surface the mismatch. Update the relevant doc when the change intentionally alters architecture, commands, or product behavior.
+
+## Known Inconsistencies To Handle Deliberately
+
+- The spec recommends Go 1.26.x, while `backend/go.mod` and `backend/Containerfile` currently use Go 1.25.0. If touching build images or Go tooling, resolve this intentionally instead of copying the mismatch forward.
+- `README.md` still describes the scaffold as having no POS application logic, but backend auth logic now exists. Update docs when working in that area.
+- PostgreSQL is present in Compose for future database-backed work, but current backend auth/session storage is in-memory and does not use the database.
+
+## Git And Change Discipline
+
+- Check `git status --short` before editing and do not overwrite user changes.
+- Use `apply_patch` or normal editor-style edits for manual file changes.
+- Keep changes narrow and avoid drive-by refactors.
+- Do not edit generated/build output such as `frontend/dist/`, `node_modules/`, or `test-results/`.
+- Do not commit secrets, `.env`, or local machine configuration.
+
+Before finishing, summarize changed files, verification performed, and any skipped checks with the reason.
