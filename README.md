@@ -1,7 +1,7 @@
 # Coffee POS
 
 Foundation scaffold for a small coffee shop POS MVP. The backend currently includes cashier PIN
-authentication and the database-backed seed command for the initial Coffee menu.
+authentication, database-backed menu reads, paid cashier order creation, and same-day cancellation.
 
 ## Local Development
 
@@ -11,11 +11,20 @@ Install frontend dependencies:
 npm --prefix frontend install
 ```
 
+Apply database migrations and seed the menu before using cashier order entry:
+
+```sh
+export DATABASE_URL="postgres://coffee_pos:coffee_pos_dev@localhost:5432/coffee_pos?sslmode=disable"
+go -C backend run ./cmd/coffee-pos db migrate
+go -C backend run ./cmd/coffee-pos db seed
+```
+
 Run the backend API:
 
 ```sh
 CASHIER_PIN_HASH="$(go -C backend run ./cmd/coffee-pos auth hash-pin 123456)"
 export CASHIER_PIN_HASH
+export DATABASE_URL="postgres://coffee_pos:coffee_pos_dev@localhost:5432/coffee_pos?sslmode=disable"
 go -C backend run ./cmd/coffee-pos serve
 ```
 
@@ -34,7 +43,7 @@ Required for `serve`:
 
 - `CASHIER_PIN_HASH`: bcrypt hash of the 6-digit cashier PIN. Generate a local development value with `go -C backend run ./cmd/coffee-pos auth hash-pin <6-digit-pin>`.
 
-Required for database commands:
+Required for `serve` and database commands:
 
 - `DATABASE_URL`: PostgreSQL connection string, for example `postgres://coffee_pos:coffee_pos_dev@localhost:5432/coffee_pos?sslmode=disable`.
 
@@ -55,6 +64,19 @@ DATABASE_URL="postgres://coffee_pos:coffee_pos_dev@localhost:5432/coffee_pos?ssl
 The seeder creates the Coffee category, Americano at Rp18.000, Latte at Rp25.000, required
 Temperature options Hot and Iced, and required Sugar options Normal, Less sugar, and No sugar.
 Rerunning `db seed` converges the same rows without duplicates.
+
+## Backend Cashier APIs
+
+Protected cashier endpoints require the HttpOnly session cookie from `POST /api/auth/login`:
+
+- `GET /api/pos/menu`: returns active menu categories, items, required modifier groups, options, stable slugs, and rupiah prices.
+- `POST /api/pos/orders`: persists a paid Cash or QRIS order after payment confirmation. The backend accepts `clientRequestId`, `paymentMethod`, optional `note`, and cart lines by menu/modifier slugs. It recalculates all prices and totals server-side and stores only paid orders.
+- `POST /api/pos/orders/{orderId}/cancel`: marks a same-day paid order as `cancelled` without deleting it.
+
+Create-order requests require a canonical lowercase UUID `clientRequestId` idempotency key. Retrying
+the same request with the same key returns the original `PaidOrderDetail`; reusing the key with a
+different request returns a conflict. `orderId` is exposed as a string even though the database ID is
+numeric. Create and cancel responses share the same `PaidOrderDetail` shape.
 
 Regenerate sqlc wrappers after changing SQL queries or migrations:
 

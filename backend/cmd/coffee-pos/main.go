@@ -16,6 +16,8 @@ import (
 	"coffee-pos/backend/internal/adapters/postgres"
 	"coffee-pos/backend/internal/adapters/security"
 	appauth "coffee-pos/backend/internal/app/auth"
+	appmenu "coffee-pos/backend/internal/app/menu"
+	apporders "coffee-pos/backend/internal/app/orders"
 	"coffee-pos/backend/internal/config"
 	"coffee-pos/backend/internal/seed"
 )
@@ -82,6 +84,16 @@ func runServe(_ context.Context) error {
 		slog.Error("backend configuration failed", "error", err)
 		return err
 	}
+	dbCfg, err := config.LoadDatabase()
+	if err != nil {
+		slog.Error("backend database configuration failed", "error", err)
+		return err
+	}
+	db, err := postgres.Open(context.Background(), dbCfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 
 	authService := appauth.NewService(appauth.Dependencies{
 		CashierPINHash: cfg.CashierPINHash,
@@ -92,11 +104,22 @@ func runServe(_ context.Context) error {
 		Clock:          systemClock{},
 		Location:       cfg.BusinessLocation,
 	})
+	menuRepository := postgres.NewMenuRepository(db)
+	menuService := appmenu.NewService(appmenu.Dependencies{Repository: menuRepository})
+	orderRepository := postgres.NewOrderRepository(db)
+	orderService := apporders.NewService(apporders.Dependencies{
+		MenuReader: &menuService,
+		Repository: orderRepository,
+		Clock:      systemClock{},
+		Location:   cfg.BusinessLocation,
+	})
 
 	server := &http.Server{
 		Addr: ":" + cfg.Port,
 		Handler: httpadapter.NewRouter(httpadapter.RouterOptions{
-			AuthService: authService,
+			AuthService:  authService,
+			MenuService:  &menuService,
+			OrderService: orderService,
 			Cookie: httpadapter.CookieConfig{
 				Name:     cfg.SessionCookieName,
 				Path:     "/",

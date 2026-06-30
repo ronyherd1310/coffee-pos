@@ -67,3 +67,28 @@ order by sort_order, id;
 
 -- name: CountMenuItemModifierGroups :one
 select count(*) from menu_item_modifier_groups;
+
+-- name: ListCashierMenuRows :many
+select
+	c.id as category_id,
+	c.name as category_name,
+	c.slug as category_slug,
+	i.id as item_id,
+	i.name as item_name,
+	i.slug as item_slug,
+	i.price_rp,
+	g.id as group_id,
+	g.name as group_name,
+	g.slug as group_slug,
+	g.required,
+	g.selection_type,
+	o.id as option_id,
+	o.name as option_name,
+	o.slug as option_slug,
+	o.price_delta_rp
+from menu_categories c
+join menu_items i on i.category_id = c.id and i.active = true
+left join menu_item_modifier_groups mig on mig.menu_item_id = i.id
+left join modifier_groups g on g.id = mig.modifier_group_id
+left join modifier_options o on o.modifier_group_id = g.id
+order by c.sort_order, c.id, i.sort_order, i.id, mig.sort_order, g.sort_order, g.id, o.sort_order, o.id;

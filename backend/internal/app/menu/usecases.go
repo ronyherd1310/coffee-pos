@@ -8,11 +8,11 @@ import (
 )
 
 type Dependencies struct {
-	Repository SeedRepository
+	Repository Repository
 }
 
 type Service struct {
-	repository SeedRepository
+	repository Repository
 }
 
 func NewService(deps Dependencies) Service {
@@ -34,4 +34,15 @@ func (service Service) Seed(ctx context.Context, seed domainmenu.Seed) error {
 		return fmt.Errorf("persist menu seed: %w", err)
 	}
 	return nil
+}
+
+func (service Service) GetCashierMenu(ctx context.Context) (CashierMenu, error) {
+	if service.repository == nil {
+		return CashierMenu{}, fmt.Errorf("read cashier menu: repository is required")
+	}
+	menu, err := service.repository.GetCashierMenu(ctx)
+	if err != nil {
+		return CashierMenu{}, fmt.Errorf("read cashier menu: %w", err)
+	}
+	return menu, nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"coffee-pos/backend/internal/adapters/postgres/sqlc"
+	appmenu "coffee-pos/backend/internal/app/menu"
 	domainmenu "coffee-pos/backend/internal/domain/menu"
 )
 
@@ -32,6 +33,124 @@ func (repo MenuRepository) SeedMenu(ctx context.Context, seed domainmenu.Seed) e
 		return fmt.Errorf("commit menu seed transaction: %w", err)
 	}
 	return nil
+}
+
+func (repo MenuRepository) GetCashierMenu(ctx context.Context) (appmenu.CashierMenu, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		select
+			c.id,
+			c.name,
+			c.slug,
+			i.id,
+			i.name,
+			i.slug,
+			i.price_rp,
+			g.id,
+			g.name,
+			g.slug,
+			g.required,
+			g.selection_type,
+			o.id,
+			o.name,
+			o.slug,
+			o.price_delta_rp
+		from menu_categories c
+		join menu_items i on i.category_id = c.id and i.active = true
+		left join menu_item_modifier_groups mig on mig.menu_item_id = i.id
+		left join modifier_groups g on g.id = mig.modifier_group_id
+		left join modifier_options o on o.modifier_group_id = g.id
+		order by c.sort_order, c.id, i.sort_order, i.id, mig.sort_order, g.sort_order, g.id, o.sort_order, o.id
+	`)
+	if err != nil {
+		return appmenu.CashierMenu{}, fmt.Errorf("query cashier menu: %w", err)
+	}
+	defer rows.Close()
+
+	var menu appmenu.CashierMenu
+	categoryIndexes := map[int64]int{}
+	itemIndexes := map[int64]int{}
+	groupIndexes := map[int64]map[int64]int{}
+
+	for rows.Next() {
+		var row cashierMenuRow
+		if err := rows.Scan(
+			&row.categoryID,
+			&row.categoryName,
+			&row.categorySlug,
+			&row.itemID,
+			&row.itemName,
+			&row.itemSlug,
+			&row.priceRp,
+			&row.groupID,
+			&row.groupName,
+			&row.groupSlug,
+			&row.required,
+			&row.selectionType,
+			&row.optionID,
+			&row.optionName,
+			&row.optionSlug,
+			&row.priceDeltaRp,
+		); err != nil {
+			return appmenu.CashierMenu{}, fmt.Errorf("scan cashier menu: %w", err)
+		}
+
+		categoryIndex, ok := categoryIndexes[row.categoryID]
+		if !ok {
+			categoryIndex = len(menu.Categories)
+			categoryIndexes[row.categoryID] = categoryIndex
+			menu.Categories = append(menu.Categories, appmenu.CashierMenuCategory{
+				ID:   row.categoryID,
+				Name: row.categoryName,
+				Slug: row.categorySlug,
+			})
+		}
+
+		itemIndex, ok := itemIndexes[row.itemID]
+		if !ok {
+			itemIndex = len(menu.Categories[categoryIndex].Items)
+			itemIndexes[row.itemID] = itemIndex
+			menu.Categories[categoryIndex].Items = append(menu.Categories[categoryIndex].Items, appmenu.CashierMenuItem{
+				ID:      row.itemID,
+				Name:    row.itemName,
+				Slug:    row.itemSlug,
+				PriceRp: int64(row.priceRp),
+			})
+		}
+
+		if !row.groupID.Valid {
+			continue
+		}
+		if groupIndexes[row.itemID] == nil {
+			groupIndexes[row.itemID] = map[int64]int{}
+		}
+		groupIndex, ok := groupIndexes[row.itemID][row.groupID.Int64]
+		if !ok {
+			groupIndex = len(menu.Categories[categoryIndex].Items[itemIndex].ModifierGroups)
+			groupIndexes[row.itemID][row.groupID.Int64] = groupIndex
+			menu.Categories[categoryIndex].Items[itemIndex].ModifierGroups = append(menu.Categories[categoryIndex].Items[itemIndex].ModifierGroups, appmenu.CashierModifierGroup{
+				ID:            row.groupID.Int64,
+				Name:          row.groupName.String,
+				Slug:          row.groupSlug.String,
+				Required:      row.required.Bool,
+				SelectionType: row.selectionType.String,
+			})
+		}
+
+		if row.optionID.Valid {
+			groups := menu.Categories[categoryIndex].Items[itemIndex].ModifierGroups
+			groups[groupIndex].Options = append(groups[groupIndex].Options, appmenu.CashierModifierOption{
+				ID:           row.optionID.Int64,
+				Name:         row.optionName.String,
+				Slug:         row.optionSlug.String,
+				PriceDeltaRp: int64(row.priceDeltaRp.Int32),
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return appmenu.CashierMenu{}, fmt.Errorf("iterate cashier menu: %w", err)
+	}
+
+	return menu, nil
 }
 
 func (repo MenuRepository) seedMenu(ctx context.Context, queries *sqlc.Queries, seed domainmenu.Seed) error {
@@ -96,4 +215,23 @@ func (repo MenuRepository) seedMenu(ctx context.Context, queries *sqlc.Queries, 
 	}
 
 	return nil
+}
+
+type cashierMenuRow struct {
+	categoryID    int64
+	categoryName  string
+	categorySlug  string
+	itemID        int64
+	itemName      string
+	itemSlug      string
+	priceRp       int32
+	groupID       sql.NullInt64
+	groupName     sql.NullString
+	groupSlug     sql.NullString
+	required      sql.NullBool
+	selectionType sql.NullString
+	optionID      sql.NullInt64
+	optionName    sql.NullString
+	optionSlug    sql.NullString
+	priceDeltaRp  sql.NullInt32
 }

@@ -1,6 +1,6 @@
 # Implementation Plan: US-03 to US-06 Backend Cashier Order Entry
 
-**Status:** Revised after 2026-06-30 plan review
+**Status:** Ready for code review
 
 ## Overview
 
@@ -68,6 +68,74 @@ US-02 database config, migrations, seeded menu data
                               -> protected cancel order HTTP endpoint
 ```
 
+## Domain Model Contract
+
+`internal/domain/orders` should expose value types and entities equivalent to the fields below. The implementation may use constructors, unexported fields, or methods instead of exported struct fields, but the domain package must preserve these concepts and invariants without importing HTTP, JSON DTOs, sqlc, database, config, or menu repository packages.
+
+### Value Types
+
+- `PaymentMethod`: supports only `cash` and `qris`.
+- `OrderStatus`: supports only `paid` and `cancelled`.
+- `BusinessDate`: represents one Asia/Jakarta calendar date. API formatting as `YYYY-MM-DD` belongs outside the domain package.
+- `OrderID`: represents a persisted order identity as a positive base-10 string at the application boundary. Draft orders do not have an `OrderID`.
+
+### PaidOrderDraft
+
+Represents the order after the cashier confirms payment but before persistence assigns a queue number.
+
+- `PaymentMethod PaymentMethod`
+- `Note *string`, nil when omitted and at most 500 characters when present.
+- `Lines []OrderLine`, non-empty.
+
+The draft does not contain `OrderID`, `QueueNumber`, `BusinessDate`, `PaidAt`, `CancelledAt`, status, client-supplied totals, or database foreign keys.
+
+### PaidOrder
+
+Represents a persisted paid or cancelled order.
+
+- `ID OrderID`
+- `BusinessDate BusinessDate`
+- `QueueNumber int`
+- `Status OrderStatus`
+- `PaymentMethod PaymentMethod`
+- `PaidAt time.Time`
+- `CancelledAt *time.Time`, nil for paid orders and set for cancelled orders.
+- `Note *string`, nil when omitted and at most 500 characters when present.
+- `Lines []OrderLine`, non-empty and kept in display order.
+- `TotalRp int64`, calculated from lines.
+
+### OrderLine
+
+Represents one persisted line snapshot. Two lines with the same menu item can exist separately when modifiers differ.
+
+- `MenuItemSlug string`
+- `MenuItemName string`
+- `UnitPriceRp int64`
+- `Quantity int`, from 1 through 99.
+- `Modifiers []Modifier`, kept in display order.
+- `LineTotalRp int64`, calculated as `(UnitPriceRp + sum(Modifier.PriceDeltaRp)) * Quantity`.
+- `DisplayOrder int`, or an equivalent stable sequence value when persisted.
+
+### Modifier
+
+Represents one modifier snapshot selected for an order line.
+
+- `GroupSlug string`
+- `GroupName string`
+- `OptionSlug string`
+- `OptionName string`
+- `PriceDeltaRp int64`
+- `DisplayOrder int`, or an equivalent stable sequence value when persisted.
+
+### Domain Invariants
+
+- Domain validation rejects empty drafts, empty lines, invalid payment methods, quantities outside 1 through 99, negative prices, duplicate modifier groups on one line, notes over 500 characters, and arithmetic overflow.
+- `LineTotalRp` and `TotalRp` are calculated by domain logic from backend-resolved prices and quantities. They are never accepted from client input.
+- Cancellation changes only status and `CancelledAt`; it preserves `ID`, `BusinessDate`, `QueueNumber`, `PaymentMethod`, `PaidAt`, `Note`, `Lines`, and `TotalRp`.
+- `paid` orders have nil `CancelledAt`; `cancelled` orders have non-nil `CancelledAt`.
+- Menu applicability rules, such as required groups attached to the selected item and option membership in a group, are validated in the application use case because they require the menu read model.
+- `clientRequestId`, request hashes, database foreign keys, sqlc rows, HTTP request DTOs, JSON tags, and error-code mapping are application or adapter concerns, not order domain fields.
+
 ## API Contracts
 
 ### Create Paid Order Request
@@ -121,6 +189,7 @@ Create-order, cancel-order, and future paid-order detail endpoints return the sa
 **Acceptance criteria:**
 
 - [ ] `internal/domain/orders` defines Cash and QRIS as the only valid payment methods.
+- [ ] Domain value types and entities preserve the `Domain Model Contract` fields and ownership boundaries.
 - [ ] Domain validation rejects empty orders, quantities outside 1 through 99, missing item names, negative prices, duplicate modifier groups on one line, invalid payment methods, and notes longer than 500 characters.
 - [ ] Total calculation uses `int64`, applies `(unit price + modifier deltas) * quantity` per line, rejects arithmetic overflow, and supports two lines for the same menu item with different modifiers without merging them.
 - [ ] Domain code can derive the Asia/Jakarta business date from an injected `time.Time` and `*time.Location`.

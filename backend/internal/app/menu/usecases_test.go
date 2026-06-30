@@ -10,7 +10,7 @@ import (
 )
 
 func TestServiceSeedInitialMenuPersistsApprovedSeed(t *testing.T) {
-	repository := &fakeSeedRepository{}
+	repository := &fakeMenuRepository{}
 	service := NewService(Dependencies{Repository: repository})
 
 	if err := service.SeedInitialMenu(context.Background()); err != nil {
@@ -26,7 +26,7 @@ func TestServiceSeedInitialMenuPersistsApprovedSeed(t *testing.T) {
 }
 
 func TestServiceSeedRejectsInvalidSeedBeforeRepositoryWrite(t *testing.T) {
-	repository := &fakeSeedRepository{}
+	repository := &fakeMenuRepository{}
 	service := NewService(Dependencies{Repository: repository})
 	seed := domainmenu.ApprovedSeed()
 	seed.Items[0].PriceRp = -1
@@ -44,7 +44,7 @@ func TestServiceSeedRejectsInvalidSeedBeforeRepositoryWrite(t *testing.T) {
 }
 
 func TestServiceSeedReturnsRepositoryFailures(t *testing.T) {
-	repository := &fakeSeedRepository{err: errors.New("write failed")}
+	repository := &fakeMenuRepository{seedErr: errors.New("write failed")}
 	service := NewService(Dependencies{Repository: repository})
 
 	err := service.SeedInitialMenu(context.Background())
@@ -56,14 +56,82 @@ func TestServiceSeedReturnsRepositoryFailures(t *testing.T) {
 	}
 }
 
-type fakeSeedRepository struct {
-	calls int
-	seed  domainmenu.Seed
-	err   error
+func TestServiceGetCashierMenuReturnsReadModel(t *testing.T) {
+	repository := &fakeMenuRepository{
+		menu: CashierMenu{
+			Categories: []CashierMenuCategory{{
+				Name: "Coffee",
+				Slug: "coffee",
+				Items: []CashierMenuItem{{
+					Name:    "Kopi Susu",
+					Slug:    "kopi-susu",
+					PriceRp: 18000,
+					ModifierGroups: []CashierModifierGroup{{
+						Name:          "Temperature",
+						Slug:          "temperature",
+						Required:      true,
+						SelectionType: "single",
+						Options: []CashierModifierOption{{
+							Name:         "Hot",
+							Slug:         "hot",
+							PriceDeltaRp: 0,
+						}},
+					}},
+				}},
+			}},
+		},
+	}
+	service := NewService(Dependencies{Repository: repository})
+
+	menu, err := service.GetCashierMenu(context.Background())
+	if err != nil {
+		t.Fatalf("GetCashierMenu returned error: %v", err)
+	}
+
+	if got := menu.Categories[0].Items[0].ModifierGroups[0].Options[0].Slug; got != "hot" {
+		t.Fatalf("option slug = %q, want hot", got)
+	}
 }
 
-func (repo *fakeSeedRepository) SeedMenu(_ context.Context, seed domainmenu.Seed) error {
+func TestServiceGetCashierMenuAllowsEmptyMenu(t *testing.T) {
+	service := NewService(Dependencies{Repository: &fakeMenuRepository{}})
+
+	menu, err := service.GetCashierMenu(context.Background())
+	if err != nil {
+		t.Fatalf("GetCashierMenu returned error: %v", err)
+	}
+
+	if len(menu.Categories) != 0 {
+		t.Fatalf("categories = %d, want 0", len(menu.Categories))
+	}
+}
+
+func TestServiceGetCashierMenuReturnsRepositoryFailures(t *testing.T) {
+	service := NewService(Dependencies{Repository: &fakeMenuRepository{readErr: errors.New("read failed")}})
+
+	_, err := service.GetCashierMenu(context.Background())
+	if err == nil {
+		t.Fatal("expected repository failure")
+	}
+	if !strings.Contains(err.Error(), "read cashier menu") {
+		t.Fatalf("expected read error, got %q", err.Error())
+	}
+}
+
+type fakeMenuRepository struct {
+	calls   int
+	seed    domainmenu.Seed
+	seedErr error
+	menu    CashierMenu
+	readErr error
+}
+
+func (repo *fakeMenuRepository) SeedMenu(_ context.Context, seed domainmenu.Seed) error {
 	repo.calls++
 	repo.seed = seed
-	return repo.err
+	return repo.seedErr
+}
+
+func (repo *fakeMenuRepository) GetCashierMenu(_ context.Context) (CashierMenu, error) {
+	return repo.menu, repo.readErr
 }
