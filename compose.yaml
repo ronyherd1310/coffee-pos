@@ -3,9 +3,13 @@ services:
     build:
       context: ./backend
       dockerfile: Containerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PORT: "8080"
       CASHIER_PIN_HASH: "${CASHIER_PIN_HASH:?CASHIER_PIN_HASH is required. Generate one with: go -C backend run ./cmd/coffee-pos auth hash-pin <6-digit-pin>}"
+      DATABASE_URL: "postgres://coffee_pos:coffee_pos_dev@postgres:5432/coffee_pos?sslmode=disable"
     expose:
       - "8080"
     healthcheck:

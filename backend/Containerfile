@@ -14,8 +14,10 @@ RUN addgroup -S coffee-pos && adduser -S coffee-pos -G coffee-pos
 USER coffee-pos
 
 ENV PORT=8080
+WORKDIR /app
 EXPOSE 8080
 
 COPY --from=build /out/coffee-pos /usr/local/bin/coffee-pos
+COPY migrations ./migrations
 
 ENTRYPOINT ["coffee-pos", "serve"]
