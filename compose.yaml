@@ -5,6 +5,7 @@ services:
       dockerfile: Containerfile
     environment:
       PORT: "8080"
+      CASHIER_PIN_HASH: "${CASHIER_PIN_HASH:?CASHIER_PIN_HASH is required. Generate one with: go -C backend run ./cmd/coffee-pos auth hash-pin <6-digit-pin>}"
     expose:
       - "8080"
     healthcheck:
