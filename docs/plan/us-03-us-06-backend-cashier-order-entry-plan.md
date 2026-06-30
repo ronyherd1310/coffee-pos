@@ -37,12 +37,13 @@ Out of scope:
 - Use stable menu and modifier slugs in cashier API requests, such as `menuItemSlug`, `groupSlug`, and `optionSlug`. The backend resolves those slugs to current active menu rows and stores database foreign keys plus immutable name/price snapshots on the paid order.
 - Do not accept client-supplied prices, subtotals, totals, queue numbers, paid timestamps, statuses, or business dates in create-order requests.
 - Persist only paid orders. There is no draft-order table or unpaid-order API in this slice.
+- Cap order notes at 500 characters in backend validation so payloads and receipt tickets stay manageable.
 - Store queue numbers as integers with a `(business_date, queue_number)` uniqueness constraint. The frontend can format display labels such as `001`; the backend returns the numeric `queueNumber`.
 - Allocate the next queue number inside the same PostgreSQL transaction that inserts the paid order, using a daily counter row with row-level locking or an equivalent atomic upsert strategy.
 - Derive `business_date` from the injected clock and the configured Asia/Jakarta location, not from the client.
 - `POST /api/pos/orders` represents "cashier has confirmed paid" after the frontend confirmation dialog. The backend should not create a separate pre-payment or pre-confirmation record.
-- Cancellation is a status transition from `paid` to `cancelled`; paid orders are never deleted. Cancellation is allowed only on the same Asia/Jakarta business date as the paid order.
-- Keep database migrations explicit. The server should not silently auto-migrate on `serve`; deployment and local setup should continue to use database commands such as `db migrate` and `db seed`.
+- Cancellation is a status transition from `paid` to `cancelled`; paid orders are never deleted. Cancellation is allowed only on the same Asia/Jakarta business date as the paid order, and no cashier-entered cancellation reason is required for MVP.
+- Keep database migrations explicit. The server should not auto-migrate or perform schema-version repair on `serve`; deployment and local setup must run database commands such as `db migrate` and `db seed` before order-entry endpoints are used.
 
 ## Dependency Graph
 
@@ -71,7 +72,7 @@ US-02 database config, migrations, seeded menu data
 **Acceptance criteria:**
 
 - [ ] `internal/domain/orders` defines Cash and QRIS as the only valid payment methods.
-- [ ] Domain validation rejects empty orders, non-positive quantities, missing item names, negative prices, duplicate modifier groups on one line, invalid payment methods, and oversized notes.
+- [ ] Domain validation rejects empty orders, non-positive quantities, missing item names, negative prices, duplicate modifier groups on one line, invalid payment methods, and notes longer than 500 characters.
 - [ ] Total calculation uses `(unit price + modifier deltas) * quantity` per line and supports two lines for the same menu item with different modifiers without merging them.
 - [ ] Domain code can derive the Asia/Jakarta business date from an injected `time.Time` and `*time.Location`.
 - [ ] Domain code defines paid and cancelled statuses without allowing deletion as a correction path.
@@ -80,7 +81,7 @@ US-02 database config, migrations, seeded menu data
 
 - [ ] Targeted tests pass: `go -C backend test ./internal/domain/orders`
 - [ ] Backend tests pass: `go -C backend test ./...`
-- [ ] Unit tests cover Cash/QRIS validation, invalid payment methods, multiple lines for the same item, total calculation, required positive quantity, note limit, and Asia/Jakarta date boundary cases.
+- [ ] Unit tests cover Cash/QRIS validation, invalid payment methods, multiple lines for the same item, total calculation, required positive quantity, 500-character note limit, and Asia/Jakarta date boundary cases.
 
 **Dependencies:** US-01 auth foundation and US-02 menu seed plan completed or in progress; no order-code dependency.
 
@@ -263,7 +264,7 @@ US-02 database config, migrations, seeded menu data
 **Acceptance criteria:**
 
 - [ ] `POST /api/pos/orders` requires the existing session middleware.
-- [ ] Request JSON accepts `paymentMethod`, optional `note`, and `lines` with `menuItemSlug`, `quantity`, and modifier selections by `groupSlug` and `optionSlug`.
+- [ ] Request JSON accepts `paymentMethod`, optional `note` of at most 500 characters, and `lines` with `menuItemSlug`, `quantity`, and modifier selections by `groupSlug` and `optionSlug`.
 - [ ] Request JSON does not accept client-supplied prices, totals, queue numbers, statuses, paid timestamps, or business dates.
 - [ ] Malformed JSON and structurally invalid requests return `400 Bad Request` with a stable error code.
 - [ ] Semantically invalid orders return `422 Unprocessable Entity` with a stable error code, without leaking SQL details.
@@ -308,6 +309,7 @@ US-02 database config, migrations, seeded menu data
 - [ ] Cancellation accepts an internal `orderId` and uses the injected clock/location to determine the current Asia/Jakarta business date.
 - [ ] A paid order from the same business date can transition to `cancelled`.
 - [ ] Cancellation records `cancelledAt` and preserves `paidAt`, `queueNumber`, `businessDate`, payment method, total, lines, modifiers, and note.
+- [ ] Cancellation does not require or store a cashier-entered cancellation reason in MVP.
 - [ ] Already-cancelled orders cannot be cancelled again.
 - [ ] Orders from previous business dates cannot be cancelled through this use case.
 - [ ] Missing orders return a not-found application result.
@@ -445,12 +447,12 @@ US-02 database config, migrations, seeded menu data
 | Endpoint scope drifts into Today's Orders or reporting | Medium | Keep list/detail/reprint/daily summary out of this plan except for returning create/cancel detail responses needed by this flow. |
 | Server startup changes from auth-only to database-backed | Medium | Document `DATABASE_URL`, migration, and seed requirements. Keep database config errors explicit and covered by tests. |
 
-## Open Questions
+## Resolved Decisions
 
-- Should order notes be capped at 500 characters for MVP? This plan assumes a backend validation cap to keep payloads and tickets manageable.
-- Should cashier API routes use slugs as planned, or should the frontend use numeric database IDs returned by the menu endpoint? Slugs are recommended because the seeded menu already has stable natural keys.
-- Should cancellation capture a cashier-entered reason? The current spec does not require one, so this plan stores only status and cancellation timestamp.
-- Should `serve` validate that required migrations have run at startup, or should missing schema surface only when database-backed endpoints are called? This plan assumes explicit `db migrate` before `serve`, without automatic migration.
+- Order notes are capped at 500 characters in backend validation.
+- Cashier menu/order APIs use stable slugs for menu item, modifier group, and modifier option selections. Numeric database IDs remain internal except for the paid order's internal `orderId`, which can be used for API routing but must not be displayed as the customer-facing order number.
+- Cancellation does not capture a cashier-entered reason in MVP. The backend stores status `cancelled` and `cancelledAt` only.
+- `serve` does not auto-migrate or repair schema state. Operators and local setup must run `db migrate` before `serve`, then `db seed` before using cashier order entry.
 
 ## Parallelization Opportunities
 
