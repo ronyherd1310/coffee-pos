@@ -40,40 +40,51 @@ describe("App auth bootstrap", () => {
   it("renders protected content when the session is authenticated", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ authenticated: true }), {
-          headers: { "Content-Type": "application/json" },
-          status: 200
-        })
+      vi.fn((url: RequestInfo | URL) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify(String(url) === "/api/auth/session" ? { authenticated: true } : { categories: [] }),
+            {
+              headers: { "Content-Type": "application/json" },
+              status: 200
+            }
+          )
+        )
       )
     );
 
     render(<App />);
 
-    expect(await screen.findByText("Protected POS shell")).toBeVisible();
+    expect(await screen.findByRole("heading", { level: 2, name: "New Order" })).toBeVisible();
     expect(screen.queryByText("Cashier PIN")).not.toBeInTheDocument();
   });
 
   it("returns to the cashier PIN screen after logout succeeds", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ authenticated: true }), {
-          headers: { "Content-Type": "application/json" },
-          status: 200
-        })
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const fetchMock = vi.fn((url: RequestInfo | URL) => {
+      if (String(url) === "/api/auth/logout") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify(String(url) === "/api/auth/session" ? { authenticated: true } : { categories: [] }),
+          {
+            headers: { "Content-Type": "application/json" },
+            status: 200
+          }
+        )
+      );
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
 
-    expect(await screen.findByText("Protected POS shell")).toBeVisible();
+    expect(await screen.findByRole("heading", { level: 2, name: "New Order" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
 
     expect(await screen.findByText("Cashier PIN")).toBeVisible();
-    expect(screen.queryByText("Protected POS shell")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "New Order" })).not.toBeInTheDocument();
   });
 
   it("renders a recoverable error state when the session check fails", async () => {

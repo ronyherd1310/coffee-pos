@@ -7,20 +7,32 @@ describe("ProtectedPosShell", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders guarded POS shell landmarks and placeholder navigation", () => {
-    vi.stubGlobal("fetch", vi.fn());
+  it("renders guarded POS shell landmarks and cashier navigation", () => {
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => undefined)));
 
     render(<ProtectedPosShell onSignedOut={vi.fn()} />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Coffee POS" })).toBeVisible();
     expect(screen.getByText("Access active")).toBeVisible();
     expect(screen.getByRole("link", { name: "New Order" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Daily Summary" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Today's Orders" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Logout" })).toBeVisible();
+    expect(screen.queryByText("Protected POS shell")).not.toBeInTheDocument();
   });
 
   it("calls backend logout and reports signed-out state on success", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const fetchMock = vi.fn((url: RequestInfo | URL) => {
+      if (String(url) === "/api/auth/logout") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ categories: [] }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+        })
+      );
+    });
     const onSignedOut = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -40,7 +52,21 @@ describe("ProtectedPosShell", () => {
 
   it("shows a recoverable error and stays signed in when logout fails", async () => {
     const onSignedOut = vi.fn();
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("network")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: RequestInfo | URL) => {
+        if (String(url) === "/api/auth/logout") {
+          return Promise.reject(new TypeError("network"));
+        }
+
+        return Promise.resolve(
+          new Response(JSON.stringify({ categories: [] }), {
+            headers: { "Content-Type": "application/json" },
+            status: 200
+          })
+        );
+      })
+    );
 
     render(<ProtectedPosShell onSignedOut={onSignedOut} />);
 

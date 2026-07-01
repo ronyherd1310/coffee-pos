@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { CashierOrderScreen } from "../cashier/CashierOrderScreen";
 import { logout } from "../../lib/auth";
 
 type ProtectedPosShellProps = {
@@ -33,18 +34,20 @@ export function ProtectedPosShell({ onSignedOut }: ProtectedPosShellProps) {
           <h1>Coffee POS</h1>
         </div>
         <button
-          className="button button--secondary"
+          aria-label={isLoggingOut ? "Logging out" : "Logout"}
+          className="button button--secondary user-avatar-button"
           disabled={isLoggingOut}
           onClick={() => void handleLogout()}
           type="button"
         >
-          {isLoggingOut ? "Logging out..." : "Logout"}
+          <span className="user-avatar-button__label">{isLoggingOut ? "Logging out..." : "Logout"}</span>
+          <span className="user-avatar-button__status" aria-hidden="true" />
         </button>
       </header>
 
       <nav className="pos-shell__nav" aria-label="POS sections">
         <a href="#new-order">New Order</a>
-        <a href="#daily-summary">Daily Summary</a>
+        <a href="#daily-summary">Today's Orders</a>
       </nav>
 
       {error ? (
@@ -53,10 +56,7 @@ export function ProtectedPosShell({ onSignedOut }: ProtectedPosShellProps) {
         </p>
       ) : null}
 
-      <section className="pos-shell__placeholder" aria-labelledby="pos-placeholder-title">
-        <h2 id="pos-placeholder-title">Protected POS shell</h2>
-        <p>Order entry and daily summary workflows will attach here in later MVP slices.</p>
-      </section>
+      <CashierOrderScreen onSessionExpired={onSignedOut} />
     </main>
   );
 }

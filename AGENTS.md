@@ -67,8 +67,14 @@ Containers:
 ```sh
 podman build -f backend/Containerfile -t coffee-pos-backend:dev backend
 podman build -f frontend/Containerfile -t coffee-pos-frontend:dev frontend
-podman compose up --build
+export CASHIER_PIN_HASH="$(go -C backend run ./cmd/coffee-pos auth hash-pin 123456)"
+podman compose up --build -d
+podman ps --filter label=io.podman.compose.project=coffee-pos
+curl -i http://localhost:8080/api/health
+podman compose down
 ```
+
+The example above uses `123456` as a local development PIN only. For any shared or production-like environment, generate a different 6-digit PIN hash and provide it through the shell environment or secret manager instead of committing it.
 
 Run the smallest relevant verification for the change. For backend behavior, prefer targeted `go test` first, then broader `go -C backend test ./...`. For frontend behavior, use Vitest/type checks; use Playwright when browser workflow behavior is involved.
 

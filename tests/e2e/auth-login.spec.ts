@@ -33,6 +33,14 @@ test("cashier can sign in, see the protected shell, and log out", async ({ page 
     await route.fulfill({ status: 204 });
   });
 
+  await page.route("**/api/pos/menu", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      json: { categories: [] },
+      status: 200
+    });
+  });
+
   await page.goto("/");
 
   await expect(page.getByRole("heading", { level: 1, name: "Coffee POS" })).toBeVisible();
@@ -41,14 +49,14 @@ test("cashier can sign in, see the protected shell, and log out", async ({ page 
   await page.getByLabel("Cashier PIN").fill("000000");
   await page.getByRole("button", { name: "Sign In" }).click();
   await expect(page.getByRole("alert")).toContainText("Invalid PIN. Try again.");
-  await expect(page.getByText("Protected POS shell")).toBeHidden();
+  await expect(page.getByRole("heading", { level: 2, name: "New Order" })).toBeHidden();
 
   await page.getByLabel("Cashier PIN").fill("123456");
   await page.getByRole("button", { name: "Sign In" }).click();
 
-  await expect(page.getByText("Protected POS shell")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "New Order" })).toBeVisible();
   await expect(page.getByRole("link", { name: "New Order" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Daily Summary" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Today's Orders" })).toBeVisible();
 
   await page.getByRole("button", { name: "Logout" }).click();
 
