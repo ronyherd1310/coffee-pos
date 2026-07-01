@@ -45,6 +45,13 @@ func (repo MenuRepository) GetCashierMenu(ctx context.Context) (appmenu.CashierM
 			i.name,
 			i.slug,
 			i.price_rp,
+			i.image_path,
+			i.popularity_rank,
+			i.best_seller,
+			i.promo,
+			i.iced,
+			i.low_sugar,
+			i.new_arrival,
 			g.id,
 			g.name,
 			g.slug,
@@ -81,6 +88,13 @@ func (repo MenuRepository) GetCashierMenu(ctx context.Context) (appmenu.CashierM
 			&row.itemName,
 			&row.itemSlug,
 			&row.priceRp,
+			&row.imagePath,
+			&row.popularityRank,
+			&row.bestSeller,
+			&row.promo,
+			&row.iced,
+			&row.lowSugar,
+			&row.newArrival,
 			&row.groupID,
 			&row.groupName,
 			&row.groupSlug,
@@ -114,6 +128,23 @@ func (repo MenuRepository) GetCashierMenu(ctx context.Context) (appmenu.CashierM
 				Name:    row.itemName,
 				Slug:    row.itemSlug,
 				PriceRp: int64(row.priceRp),
+				ImagePath: func() string {
+					if row.imagePath.Valid {
+						return row.imagePath.String
+					}
+					return ""
+				}(),
+				PopularityRank: func() int64 {
+					if row.popularityRank.Valid {
+						return int64(row.popularityRank.Int32)
+					}
+					return 0
+				}(),
+				BestSeller: row.bestSeller,
+				Promo:      row.promo,
+				Iced:       row.iced,
+				LowSugar:   row.lowSugar,
+				NewArrival: row.newArrival,
 			})
 		}
 
@@ -154,31 +185,47 @@ func (repo MenuRepository) GetCashierMenu(ctx context.Context) (appmenu.CashierM
 }
 
 func (repo MenuRepository) seedMenu(ctx context.Context, queries *sqlc.Queries, seed domainmenu.Seed) error {
-	categoryID, err := queries.UpsertMenuCategory(ctx, sqlc.UpsertMenuCategoryParams{
-		Name:      seed.Category.Name,
-		Slug:      seed.Category.Slug,
-		SortOrder: 0,
-	})
-	if err != nil {
-		return fmt.Errorf("upsert menu category %q: %w", seed.Category.Name, err)
+	categoryIDs := make(map[string]int64, len(seed.Categories))
+	for index, category := range seed.Categories {
+		categoryID, err := queries.UpsertMenuCategory(ctx, sqlc.UpsertMenuCategoryParams{
+			Name:      category.Name,
+			Slug:      category.Slug,
+			SortOrder: int32(index),
+		})
+		if err != nil {
+			return fmt.Errorf("upsert menu category %q: %w", category.Name, err)
+		}
+		categoryIDs[category.Slug] = categoryID
 	}
 
-	itemIDs := make([]int64, 0, len(seed.Items))
+	itemIDs := make(map[string]int64, len(seed.Items))
 	for index, item := range seed.Items {
+		categoryID, ok := categoryIDs[item.CategorySlug]
+		if !ok {
+			return fmt.Errorf("upsert menu item %q: unknown category %q", item.Name, item.CategorySlug)
+		}
 		itemID, err := queries.UpsertMenuItem(ctx, sqlc.UpsertMenuItemParams{
-			CategoryID: categoryID,
-			Name:       item.Name,
-			Slug:       item.Slug,
-			PriceRp:    int32(item.PriceRp),
-			Active:     true,
-			SortOrder:  int32(index),
+			CategoryID:     categoryID,
+			Name:           item.Name,
+			Slug:           item.Slug,
+			PriceRp:        int32(item.PriceRp),
+			Active:         true,
+			SortOrder:      int32(index),
+			ImagePath:      nullString(item.Display.ImagePath),
+			PopularityRank: nullInt32(item.Display.PopularityRank),
+			BestSeller:     item.Display.BestSeller,
+			Promo:          item.Display.Promo,
+			Iced:           item.Display.Iced,
+			LowSugar:       item.Display.LowSugar,
+			NewArrival:     item.Display.NewArrival,
 		})
 		if err != nil {
 			return fmt.Errorf("upsert menu item %q: %w", item.Name, err)
 		}
-		itemIDs = append(itemIDs, itemID)
+		itemIDs[item.Slug] = itemID
 	}
 
+	groupIDs := make(map[string]int64, len(seed.ModifierGroups))
 	for groupIndex, group := range seed.ModifierGroups {
 		groupID, err := queries.UpsertModifierGroup(ctx, sqlc.UpsertModifierGroupParams{
 			Name:          group.Name,
@@ -190,16 +237,7 @@ func (repo MenuRepository) seedMenu(ctx context.Context, queries *sqlc.Queries, 
 		if err != nil {
 			return fmt.Errorf("upsert modifier group %q: %w", group.Name, err)
 		}
-
-		for _, itemID := range itemIDs {
-			if err := queries.UpsertMenuItemModifierGroup(ctx, sqlc.UpsertMenuItemModifierGroupParams{
-				MenuItemID:      itemID,
-				ModifierGroupID: groupID,
-				SortOrder:       int32(groupIndex),
-			}); err != nil {
-				return fmt.Errorf("link menu item to modifier group %q: %w", group.Name, err)
-			}
-		}
+		groupIDs[group.Slug] = groupID
 
 		for optionIndex, option := range group.Options {
 			if _, err := queries.UpsertModifierOption(ctx, sqlc.UpsertModifierOptionParams{
@@ -214,24 +252,59 @@ func (repo MenuRepository) seedMenu(ctx context.Context, queries *sqlc.Queries, 
 		}
 	}
 
+	for _, item := range seed.Items {
+		itemID, ok := itemIDs[item.Slug]
+		if !ok {
+			return fmt.Errorf("link menu item %q to modifier groups: missing item id", item.Name)
+		}
+		for groupIndex, groupSlug := range item.ModifierGroupSlugs {
+			groupID, ok := groupIDs[groupSlug]
+			if !ok {
+				return fmt.Errorf("link menu item %q to modifier group %q: missing group id", item.Name, groupSlug)
+			}
+			if err := queries.UpsertMenuItemModifierGroup(ctx, sqlc.UpsertMenuItemModifierGroupParams{
+				MenuItemID:      itemID,
+				ModifierGroupID: groupID,
+				SortOrder:       int32(groupIndex),
+			}); err != nil {
+				return fmt.Errorf("link menu item %q to modifier group %q: %w", item.Name, groupSlug, err)
+			}
+		}
+	}
+
 	return nil
 }
 
+func nullString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: value != ""}
+}
+
+func nullInt32(value int) sql.NullInt32 {
+	return sql.NullInt32{Int32: int32(value), Valid: value > 0}
+}
+
 type cashierMenuRow struct {
-	categoryID    int64
-	categoryName  string
-	categorySlug  string
-	itemID        int64
-	itemName      string
-	itemSlug      string
-	priceRp       int32
-	groupID       sql.NullInt64
-	groupName     sql.NullString
-	groupSlug     sql.NullString
-	required      sql.NullBool
-	selectionType sql.NullString
-	optionID      sql.NullInt64
-	optionName    sql.NullString
-	optionSlug    sql.NullString
-	priceDeltaRp  sql.NullInt32
+	categoryID     int64
+	categoryName   string
+	categorySlug   string
+	itemID         int64
+	itemName       string
+	itemSlug       string
+	priceRp        int32
+	imagePath      sql.NullString
+	popularityRank sql.NullInt32
+	bestSeller     bool
+	promo          bool
+	iced           bool
+	lowSugar       bool
+	newArrival     bool
+	groupID        sql.NullInt64
+	groupName      sql.NullString
+	groupSlug      sql.NullString
+	required       sql.NullBool
+	selectionType  sql.NullString
+	optionID       sql.NullInt64
+	optionName     sql.NullString
+	optionSlug     sql.NullString
+	priceDeltaRp   sql.NullInt32
 }

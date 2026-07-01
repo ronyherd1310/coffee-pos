@@ -20,6 +20,13 @@ export type MenuItem = {
   name: string;
   slug: string;
   priceRp: number;
+  imagePath?: string;
+  popularityRank?: number;
+  bestSeller?: boolean;
+  promo?: boolean;
+  iced?: boolean;
+  lowSugar?: boolean;
+  newArrival?: boolean;
   modifierGroups: ModifierGroup[];
 };
 

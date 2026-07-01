@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countMenuItemModifierGroups = `-- name: CountMenuItemModifierGroups :one
@@ -18,6 +19,112 @@ func (q *Queries) CountMenuItemModifierGroups(ctx context.Context) (int64, error
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const listCashierMenuRows = `-- name: ListCashierMenuRows :many
+select
+	c.id as category_id,
+	c.name as category_name,
+	c.slug as category_slug,
+	i.id as item_id,
+	i.name as item_name,
+	i.slug as item_slug,
+	i.price_rp,
+	i.image_path,
+	i.popularity_rank,
+	i.best_seller,
+	i.promo,
+	i.iced,
+	i.low_sugar,
+	i.new_arrival,
+	g.id as group_id,
+	g.name as group_name,
+	g.slug as group_slug,
+	g.required,
+	g.selection_type,
+	o.id as option_id,
+	o.name as option_name,
+	o.slug as option_slug,
+	o.price_delta_rp
+from menu_categories c
+join menu_items i on i.category_id = c.id and i.active = true
+left join menu_item_modifier_groups mig on mig.menu_item_id = i.id
+left join modifier_groups g on g.id = mig.modifier_group_id
+left join modifier_options o on o.modifier_group_id = g.id
+order by c.sort_order, c.id, i.sort_order, i.id, mig.sort_order, g.sort_order, g.id, o.sort_order, o.id
+`
+
+type ListCashierMenuRowsRow struct {
+	CategoryID     int64
+	CategoryName   string
+	CategorySlug   string
+	ItemID         int64
+	ItemName       string
+	ItemSlug       string
+	PriceRp        int32
+	ImagePath      sql.NullString
+	PopularityRank sql.NullInt32
+	BestSeller     bool
+	Promo          bool
+	Iced           bool
+	LowSugar       bool
+	NewArrival     bool
+	GroupID        sql.NullInt64
+	GroupName      sql.NullString
+	GroupSlug      sql.NullString
+	Required       sql.NullBool
+	SelectionType  sql.NullString
+	OptionID       sql.NullInt64
+	OptionName     sql.NullString
+	OptionSlug     sql.NullString
+	PriceDeltaRp   sql.NullInt32
+}
+
+func (q *Queries) ListCashierMenuRows(ctx context.Context) ([]ListCashierMenuRowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCashierMenuRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCashierMenuRowsRow
+	for rows.Next() {
+		var i ListCashierMenuRowsRow
+		if err := rows.Scan(
+			&i.CategoryID,
+			&i.CategoryName,
+			&i.CategorySlug,
+			&i.ItemID,
+			&i.ItemName,
+			&i.ItemSlug,
+			&i.PriceRp,
+			&i.ImagePath,
+			&i.PopularityRank,
+			&i.BestSeller,
+			&i.Promo,
+			&i.Iced,
+			&i.LowSugar,
+			&i.NewArrival,
+			&i.GroupID,
+			&i.GroupName,
+			&i.GroupSlug,
+			&i.Required,
+			&i.SelectionType,
+			&i.OptionID,
+			&i.OptionName,
+			&i.OptionSlug,
+			&i.PriceDeltaRp,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listMenuCategories = `-- name: ListMenuCategories :many
@@ -62,19 +169,40 @@ func (q *Queries) ListMenuCategories(ctx context.Context) ([]ListMenuCategoriesR
 }
 
 const listMenuItems = `-- name: ListMenuItems :many
-select id, category_id, name, slug, price_rp, active, sort_order
+select
+	id,
+	category_id,
+	name,
+	slug,
+	price_rp,
+	active,
+	sort_order,
+	image_path,
+	popularity_rank,
+	best_seller,
+	promo,
+	iced,
+	low_sugar,
+	new_arrival
 from menu_items
 order by sort_order, id
 `
 
 type ListMenuItemsRow struct {
-	ID         int64
-	CategoryID int64
-	Name       string
-	Slug       string
-	PriceRp    int32
-	Active     bool
-	SortOrder  int32
+	ID             int64
+	CategoryID     int64
+	Name           string
+	Slug           string
+	PriceRp        int32
+	Active         bool
+	SortOrder      int32
+	ImagePath      sql.NullString
+	PopularityRank sql.NullInt32
+	BestSeller     bool
+	Promo          bool
+	Iced           bool
+	LowSugar       bool
+	NewArrival     bool
 }
 
 func (q *Queries) ListMenuItems(ctx context.Context) ([]ListMenuItemsRow, error) {
@@ -94,6 +222,13 @@ func (q *Queries) ListMenuItems(ctx context.Context) ([]ListMenuItemsRow, error)
 			&i.PriceRp,
 			&i.Active,
 			&i.SortOrder,
+			&i.ImagePath,
+			&i.PopularityRank,
+			&i.BestSeller,
+			&i.Promo,
+			&i.Iced,
+			&i.LowSugar,
+			&i.NewArrival,
 		); err != nil {
 			return nil, err
 		}
@@ -222,24 +357,53 @@ func (q *Queries) UpsertMenuCategory(ctx context.Context, arg UpsertMenuCategory
 }
 
 const upsertMenuItem = `-- name: UpsertMenuItem :one
-insert into menu_items (category_id, name, slug, price_rp, active, sort_order, updated_at)
-values ($1, $2, $3, $4, $5, $6, now())
+insert into menu_items (
+	category_id,
+	name,
+	slug,
+	price_rp,
+	active,
+	sort_order,
+	image_path,
+	popularity_rank,
+	best_seller,
+	promo,
+	iced,
+	low_sugar,
+	new_arrival,
+	updated_at
+)
+values ($1, $2, $3, $4, $5, $6, $12, $13, $7, $8, $9, $10, $11, now())
 on conflict (category_id, slug) do update set
 	name = excluded.name,
 	price_rp = excluded.price_rp,
 	active = excluded.active,
 	sort_order = excluded.sort_order,
+	image_path = excluded.image_path,
+	popularity_rank = excluded.popularity_rank,
+	best_seller = excluded.best_seller,
+	promo = excluded.promo,
+	iced = excluded.iced,
+	low_sugar = excluded.low_sugar,
+	new_arrival = excluded.new_arrival,
 	updated_at = now()
 returning id
 `
 
 type UpsertMenuItemParams struct {
-	CategoryID int64
-	Name       string
-	Slug       string
-	PriceRp    int32
-	Active     bool
-	SortOrder  int32
+	CategoryID     int64
+	Name           string
+	Slug           string
+	PriceRp        int32
+	Active         bool
+	SortOrder      int32
+	BestSeller     bool
+	Promo          bool
+	Iced           bool
+	LowSugar       bool
+	NewArrival     bool
+	ImagePath      sql.NullString
+	PopularityRank sql.NullInt32
 }
 
 func (q *Queries) UpsertMenuItem(ctx context.Context, arg UpsertMenuItemParams) (int64, error) {
@@ -250,6 +414,13 @@ func (q *Queries) UpsertMenuItem(ctx context.Context, arg UpsertMenuItemParams) 
 		arg.PriceRp,
 		arg.Active,
 		arg.SortOrder,
+		arg.BestSeller,
+		arg.Promo,
+		arg.Iced,
+		arg.LowSugar,
+		arg.NewArrival,
+		arg.ImagePath,
+		arg.PopularityRank,
 	)
 	var id int64
 	err := row.Scan(&id)

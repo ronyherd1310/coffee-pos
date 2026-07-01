@@ -31,9 +31,16 @@ func TestCashierMenuReturnsAuthenticatedReadModel(t *testing.T) {
 			Name: "Coffee",
 			Slug: "coffee",
 			Items: []appmenu.CashierMenuItem{{
-				Name:    "Kopi Susu",
-				Slug:    "kopi-susu",
-				PriceRp: 18000,
+				Name:           "Kopi Susu",
+				Slug:           "kopi-susu",
+				PriceRp:        18000,
+				ImagePath:      "/menu/kopi-susu.png",
+				PopularityRank: 7,
+				BestSeller:     true,
+				Promo:          true,
+				Iced:           true,
+				LowSugar:       true,
+				NewArrival:     true,
 				ModifierGroups: []appmenu.CashierModifierGroup{{
 					Name:          "Temperature",
 					Slug:          "temperature",
@@ -65,6 +72,13 @@ func TestCashierMenuReturnsAuthenticatedReadModel(t *testing.T) {
 			Items []struct {
 				Slug           string `json:"slug"`
 				PriceRp        int64  `json:"priceRp"`
+				ImagePath      string `json:"imagePath"`
+				PopularityRank int    `json:"popularityRank"`
+				BestSeller     bool   `json:"bestSeller"`
+				Promo          bool   `json:"promo"`
+				Iced           bool   `json:"iced"`
+				LowSugar       bool   `json:"lowSugar"`
+				NewArrival     bool   `json:"newArrival"`
 				ModifierGroups []struct {
 					Slug    string `json:"slug"`
 					Options []struct {
@@ -82,6 +96,16 @@ func TestCashierMenuReturnsAuthenticatedReadModel(t *testing.T) {
 	}
 	if got := body.Categories[0].Items[0].PriceRp; got != 18000 {
 		t.Fatalf("priceRp = %d, want 18000", got)
+	}
+	item := body.Categories[0].Items[0]
+	if item.ImagePath != "/menu/kopi-susu.png" ||
+		item.PopularityRank != 7 ||
+		!item.BestSeller ||
+		!item.Promo ||
+		!item.Iced ||
+		!item.LowSugar ||
+		!item.NewArrival {
+		t.Fatalf("unexpected display metadata: %+v", item)
 	}
 }
 

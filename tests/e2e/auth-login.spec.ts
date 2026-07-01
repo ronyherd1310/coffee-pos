@@ -58,7 +58,7 @@ test("cashier can sign in, see the protected shell, and log out", async ({ page 
   await expect(page.getByRole("link", { name: "New Order" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Today's Orders" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Logout" }).click();
+  await page.getByRole("button", { name: "Logout cashier" }).click();
 
   await expect(page.getByText("Cashier PIN")).toBeVisible();
   await expect(page.getByText("Protected POS shell")).toBeHidden();

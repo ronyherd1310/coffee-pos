@@ -8,13 +8,35 @@ on conflict (slug) do update set
 returning id;
 
 -- name: UpsertMenuItem :one
-insert into menu_items (category_id, name, slug, price_rp, active, sort_order, updated_at)
-values ($1, $2, $3, $4, $5, $6, now())
+insert into menu_items (
+	category_id,
+	name,
+	slug,
+	price_rp,
+	active,
+	sort_order,
+	image_path,
+	popularity_rank,
+	best_seller,
+	promo,
+	iced,
+	low_sugar,
+	new_arrival,
+	updated_at
+)
+values ($1, $2, $3, $4, $5, $6, sqlc.narg(image_path), sqlc.narg(popularity_rank), $7, $8, $9, $10, $11, now())
 on conflict (category_id, slug) do update set
 	name = excluded.name,
 	price_rp = excluded.price_rp,
 	active = excluded.active,
 	sort_order = excluded.sort_order,
+	image_path = excluded.image_path,
+	popularity_rank = excluded.popularity_rank,
+	best_seller = excluded.best_seller,
+	promo = excluded.promo,
+	iced = excluded.iced,
+	low_sugar = excluded.low_sugar,
+	new_arrival = excluded.new_arrival,
 	updated_at = now()
 returning id;
 
@@ -51,7 +73,21 @@ from menu_categories
 order by sort_order, id;
 
 -- name: ListMenuItems :many
-select id, category_id, name, slug, price_rp, active, sort_order
+select
+	id,
+	category_id,
+	name,
+	slug,
+	price_rp,
+	active,
+	sort_order,
+	image_path,
+	popularity_rank,
+	best_seller,
+	promo,
+	iced,
+	low_sugar,
+	new_arrival
 from menu_items
 order by sort_order, id;
 
@@ -77,6 +113,13 @@ select
 	i.name as item_name,
 	i.slug as item_slug,
 	i.price_rp,
+	i.image_path,
+	i.popularity_rank,
+	i.best_seller,
+	i.promo,
+	i.iced,
+	i.low_sugar,
+	i.new_arrival,
 	g.id as group_id,
 	g.name as group_name,
 	g.slug as group_slug,

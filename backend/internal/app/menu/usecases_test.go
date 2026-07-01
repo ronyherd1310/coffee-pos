@@ -20,7 +20,7 @@ func TestServiceSeedInitialMenuPersistsApprovedSeed(t *testing.T) {
 	if repository.calls != 1 {
 		t.Fatalf("expected repository to be called once, got %d", repository.calls)
 	}
-	if repository.seed.Category.Name != "Coffee" {
+	if len(repository.seed.Categories) != 4 || repository.seed.Categories[0].Name != "Coffee" {
 		t.Fatalf("expected approved seed to be persisted, got %+v", repository.seed)
 	}
 }

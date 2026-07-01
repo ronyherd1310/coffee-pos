@@ -194,12 +194,48 @@ function parseMenuItem(data: unknown): MenuItem | undefined {
     return undefined;
   }
 
+  const displayMetadata = parseMenuItemDisplayMetadata(data);
+  if (!displayMetadata) {
+    return undefined;
+  }
+
   return {
+    ...displayMetadata,
     modifierGroups: modifierGroups as ModifierGroup[],
     name: data.name,
     priceRp: data.priceRp,
     slug: data.slug
   };
+}
+
+function parseMenuItemDisplayMetadata(data: Record<string, unknown>): Partial<MenuItem> | undefined {
+  const metadata: Partial<MenuItem> = {};
+
+  if (data.imagePath !== undefined) {
+    if (!isString(data.imagePath)) {
+      return undefined;
+    }
+    metadata.imagePath = data.imagePath;
+  }
+
+  if (data.popularityRank !== undefined) {
+    if (!isInteger(data.popularityRank)) {
+      return undefined;
+    }
+    metadata.popularityRank = data.popularityRank;
+  }
+
+  for (const key of ["bestSeller", "promo", "iced", "lowSugar", "newArrival"] as const) {
+    if (data[key] === undefined) {
+      continue;
+    }
+    if (typeof data[key] !== "boolean") {
+      return undefined;
+    }
+    metadata[key] = data[key];
+  }
+
+  return metadata;
 }
 
 function parseModifierGroup(data: unknown): ModifierGroup | undefined {

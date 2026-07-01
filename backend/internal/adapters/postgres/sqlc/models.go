@@ -5,8 +5,18 @@
 package sqlc
 
 import (
+	"database/sql"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+type DailyQueueCounter struct {
+	BusinessDate    time.Time
+	LastQueueNumber int32
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
 
 type MenuCategory struct {
 	ID        int64
@@ -18,15 +28,22 @@ type MenuCategory struct {
 }
 
 type MenuItem struct {
-	ID         int64
-	CategoryID int64
-	Name       string
-	Slug       string
-	PriceRp    int32
-	Active     bool
-	SortOrder  int32
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID             int64
+	CategoryID     int64
+	Name           string
+	Slug           string
+	PriceRp        int32
+	Active         bool
+	SortOrder      int32
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ImagePath      sql.NullString
+	PopularityRank sql.NullInt32
+	BestSeller     bool
+	Promo          bool
+	Iced           bool
+	LowSugar       bool
+	NewArrival     bool
 }
 
 type MenuItemModifierGroup struct {
@@ -55,4 +72,47 @@ type ModifierOption struct {
 	SortOrder       int32
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+type Order struct {
+	ID              int64
+	BusinessDate    time.Time
+	QueueNumber     int32
+	Status          string
+	PaymentMethod   string
+	PaidAt          time.Time
+	CancelledAt     sql.NullTime
+	Note            sql.NullString
+	TotalRp         int64
+	ClientRequestID uuid.UUID
+	RequestHash     []byte
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type OrderLine struct {
+	ID           int64
+	OrderID      int64
+	MenuItemID   int64
+	MenuItemSlug string
+	MenuItemName string
+	UnitPriceRp  int64
+	Quantity     int32
+	LineTotalRp  int64
+	DisplayOrder int32
+	CreatedAt    time.Time
+}
+
+type OrderLineModifier struct {
+	ID               int64
+	OrderLineID      int64
+	ModifierGroupID  int64
+	ModifierOptionID int64
+	GroupSlug        string
+	GroupName        string
+	OptionSlug       string
+	OptionName       string
+	PriceDeltaRp     int64
+	DisplayOrder     int32
+	CreatedAt        time.Time
 }

@@ -23,6 +23,12 @@ export type DraftOrder = {
 
 export type DraftValidation = { isValid: true; errors: [] } | { isValid: false; errors: string[] };
 
+export type DraftBreakdown = {
+  subtotalRp: number;
+  taxRp: number;
+  totalRp: number;
+};
+
 export function createCartLine(input: CartLine): CartLine {
   return {
     id: input.id,
@@ -70,6 +76,17 @@ export function calculateLineTotal(line: CartLine): number {
 
 export function calculateDraftTotal(lines: CartLine[]): number {
   return lines.reduce((total, line) => total + calculateLineTotal(line), 0);
+}
+
+export function calculateDraftBreakdown(lines: CartLine[]): DraftBreakdown {
+  const subtotalRp = calculateDraftTotal(lines);
+  const taxRp = Math.round(subtotalRp * 0.11);
+
+  return {
+    subtotalRp,
+    taxRp,
+    totalRp: subtotalRp + taxRp
+  };
 }
 
 export function buildCreatePaidOrderPayload(input: {

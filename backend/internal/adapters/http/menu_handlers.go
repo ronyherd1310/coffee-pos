@@ -43,6 +43,13 @@ type cashierMenuItemResponse struct {
 	Name           string                         `json:"name"`
 	Slug           string                         `json:"slug"`
 	PriceRp        int64                          `json:"priceRp"`
+	ImagePath      string                         `json:"imagePath"`
+	PopularityRank int64                          `json:"popularityRank"`
+	BestSeller     bool                           `json:"bestSeller"`
+	Promo          bool                           `json:"promo"`
+	Iced           bool                           `json:"iced"`
+	LowSugar       bool                           `json:"lowSugar"`
+	NewArrival     bool                           `json:"newArrival"`
 	ModifierGroups []cashierModifierGroupResponse `json:"modifierGroups"`
 }
 
@@ -73,6 +80,13 @@ func cashierMenuResponseFromApp(menu appmenu.CashierMenu) cashierMenuResponse {
 				Name:           item.Name,
 				Slug:           item.Slug,
 				PriceRp:        item.PriceRp,
+				ImagePath:      item.ImagePath,
+				PopularityRank: item.PopularityRank,
+				BestSeller:     item.BestSeller,
+				Promo:          item.Promo,
+				Iced:           item.Iced,
+				LowSugar:       item.LowSugar,
+				NewArrival:     item.NewArrival,
 				ModifierGroups: make([]cashierModifierGroupResponse, 0, len(item.ModifierGroups)),
 			}
 			for _, group := range item.ModifierGroups {

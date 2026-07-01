@@ -81,7 +81,7 @@ describe("App auth bootstrap", () => {
 
     expect(await screen.findByRole("heading", { level: 2, name: "New Order" })).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Logout cashier" }));
 
     expect(await screen.findByText("Cashier PIN")).toBeVisible();
     expect(screen.queryByRole("heading", { level: 2, name: "New Order" })).not.toBeInTheDocument();

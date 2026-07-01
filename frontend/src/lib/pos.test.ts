@@ -73,6 +73,51 @@ describe("cashier POS API client", () => {
     });
   });
 
+  it("loads optional menu display metadata when present", async () => {
+    const response = {
+      categories: [
+        {
+          name: "Coffee",
+          slug: "coffee",
+          items: [
+            {
+              ...menuResponse.categories[0].items[0],
+              imagePath: "/menu/americano.png",
+              popularityRank: 10,
+              bestSeller: true,
+              promo: false,
+              iced: true,
+              lowSugar: true,
+              newArrival: false
+            }
+          ]
+        }
+      ]
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(response)));
+
+    await expect(getCashierMenu()).resolves.toEqual({ status: "success", menu: response });
+  });
+
+  it("rejects malformed optional menu display metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          categories: [
+            {
+              name: "Coffee",
+              slug: "coffee",
+              items: [{ ...menuResponse.categories[0].items[0], bestSeller: "yes" }]
+            }
+          ]
+        })
+      )
+    );
+
+    await expect(getCashierMenu()).resolves.toEqual({ status: "unexpected" });
+  });
+
   it("maps unauthorized menu responses", async () => {
     vi.stubGlobal(
       "fetch",

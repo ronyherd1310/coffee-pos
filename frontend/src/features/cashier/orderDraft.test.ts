@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { MenuItem } from "./types";
 import {
   buildCreatePaidOrderPayload,
+  calculateDraftBreakdown,
   calculateDraftTotal,
   calculateLineTotal,
   createCartLine,
@@ -84,6 +85,21 @@ describe("order draft helpers", () => {
     expect(calculateDraftTotal([line])).toBe(40000);
   });
 
+  it("returns an 11% tax breakdown for the order summary", () => {
+    const line = createCartLine({
+      id: "line-1",
+      item: americano,
+      quantity: 2,
+      selectedModifiers: { sugar: "normal", temperature: "iced" }
+    });
+
+    expect(calculateDraftBreakdown([line])).toEqual({
+      subtotalRp: 40000,
+      taxRp: 4400,
+      totalRp: 44400
+    });
+  });
+
   it("keeps the same drink with different modifiers as separate cart lines", () => {
     const hotLine = createCartLine({
       id: "line-hot",
@@ -111,12 +127,12 @@ describe("order draft helpers", () => {
       selectedModifiers: { sugar: "less", temperature: "iced" }
     });
 
-    expect(
-      buildCreatePaidOrderPayload({
+    const payload = buildCreatePaidOrderPayload({
         clientRequestId: "11111111-1111-4111-8111-111111111111",
         draft: { lines: [line], note: "   ", paymentMethod: "qris" }
-      })
-    ).toEqual({
+    });
+
+    expect(payload).toEqual({
       clientRequestId: "11111111-1111-4111-8111-111111111111",
       lines: [
         {
@@ -130,5 +146,8 @@ describe("order draft helpers", () => {
       ],
       paymentMethod: "qris"
     });
+    expect(payload).not.toHaveProperty("subtotalRp");
+    expect(payload).not.toHaveProperty("taxRp");
+    expect(payload).not.toHaveProperty("totalRp");
   });
 });

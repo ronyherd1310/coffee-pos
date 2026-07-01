@@ -10,9 +10,22 @@ type Category struct {
 }
 
 type Item struct {
-	Name    string
-	Slug    string
-	PriceRp int
+	Name               string
+	Slug               string
+	CategorySlug       string
+	PriceRp            int
+	ModifierGroupSlugs []string
+	Display            ItemDisplay
+}
+
+type ItemDisplay struct {
+	ImagePath      string
+	PopularityRank int
+	BestSeller     bool
+	Promo          bool
+	Iced           bool
+	LowSugar       bool
+	NewArrival     bool
 }
 
 type ModifierGroup struct {
@@ -30,7 +43,7 @@ type ModifierOption struct {
 }
 
 type Seed struct {
-	Category       Category
+	Categories     []Category
 	Items          []Item
 	ModifierGroups []ModifierGroup
 }

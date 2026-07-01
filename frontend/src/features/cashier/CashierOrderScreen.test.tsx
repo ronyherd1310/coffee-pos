@@ -84,6 +84,53 @@ const orderMenuResponse = {
   ]
 };
 
+const revampMenuResponse = {
+  categories: [
+    {
+      ...orderMenuResponse.categories[0],
+      items: orderMenuResponse.categories[0].items.map((item, index) => ({
+        ...item,
+        imagePath: index === 0 ? "/menu/americano.png" : "/menu/latte.png",
+        popularityRank: index + 1,
+        bestSeller: true,
+        iced: true,
+        lowSugar: true,
+        newArrival: false
+      }))
+    },
+    {
+      name: "Tea",
+      slug: "tea",
+      items: [
+        {
+          name: "Iced Tea",
+          slug: "iced-tea",
+          priceRp: 15000,
+          imagePath: "/menu/iced-tea.png",
+          popularityRank: 3,
+          iced: true,
+          modifierGroups: []
+        }
+      ]
+    },
+    {
+      name: "Snacks",
+      slug: "snacks",
+      items: [
+        {
+          name: "Muffin",
+          slug: "muffin",
+          priceRp: 20000,
+          imagePath: "/menu/muffin.png",
+          popularityRank: 4,
+          newArrival: true,
+          modifierGroups: []
+        }
+      ]
+    }
+  ]
+};
+
 const paidOrderResponse = {
   orderId: "order-1",
   queueNumber: 1,
@@ -232,17 +279,36 @@ describe("CashierOrderScreen draft order flow", () => {
     await addAmericanoLine("Hot", "Normal");
 
     expect(screen.getByText("Total")).toBeVisible();
-    expect(screen.getByText("Rp18.000", { selector: ".payment-total" })).toBeVisible();
+    expect(screen.getByText("Tax")).toBeVisible();
+    expect(screen.getByText("Rp1.980", { selector: ".order-total__tax dd" })).toBeVisible();
+    expect(screen.getByText("Rp19.980", { selector: ".payment-total" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Increase Americano quantity" }));
-    expect(screen.getByText("Rp36.000", { selector: ".payment-total" })).toBeVisible();
+    expect(screen.getByText("Rp39.960", { selector: ".payment-total" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Decrease Americano quantity" }));
-    expect(screen.getByText("Rp18.000", { selector: ".payment-total" })).toBeVisible();
+    expect(screen.getByText("Rp19.980", { selector: ".payment-total" })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Americano" }));
     expect(screen.getByText("No items added yet.")).toBeVisible();
     expect(screen.getByText("Rp0", { selector: ".payment-total" })).toBeVisible();
+  });
+
+  it("renders current order rows with thumbnails and stable controls", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(revampMenuResponse)));
+
+    render(<CashierOrderScreen onSessionExpired={vi.fn()} />);
+
+    await addAmericanoLine("Hot", "Normal");
+
+    const row = screen.getByText("Americano", { selector: ".cart-line__name" }).closest("li") as HTMLElement;
+    expect(row.querySelector(".cart-line__thumb img")).toHaveAttribute("src", "/menu/americano.png");
+    expect(within(row).getByText("1x")).toBeVisible();
+    expect(within(row).getByText("Americano")).toBeVisible();
+    expect(within(row).getByText("Hot, Normal")).toBeVisible();
+    expect(within(row).getByText("Rp18.000")).toBeVisible();
+    expect(within(row).getByRole("button", { name: "Increase Americano quantity" })).toBeVisible();
+    expect(within(row).getByRole("button", { name: "Remove Americano" })).toBeVisible();
   });
 
   it("limits order notes to 120 characters and shows the note count", async () => {
@@ -263,21 +329,96 @@ describe("CashierOrderScreen draft order flow", () => {
     render(<CashierOrderScreen onSessionExpired={vi.fn()} />);
 
     expect(await screen.findByRole("button", { name: /Americano/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Confirm Paid" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Print Ticket" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Proceed to Payment" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Print Ticket" })).not.toBeInTheDocument();
 
     await addAmericanoLine("Hot", "Normal");
 
-    expect(screen.getByRole("button", { name: "Confirm Paid" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Proceed to Payment" })).toBeDisabled();
 
     fireEvent.click(screen.getByLabelText("QRIS"));
 
-    expect(screen.getByRole("button", { name: "Confirm Paid" })).toBeEnabled();
-    expect(screen.getByAltText("Static QRIS payment code")).toHaveAttribute(
-      "src",
-      "/qris/static-qris.png"
-    );
-    expect(screen.getByText("Check the customer's QRIS payment manually before confirming paid.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Proceed to Payment" })).toBeEnabled();
+    expect(screen.queryByAltText("Static QRIS payment code")).not.toBeInTheDocument();
+  });
+
+  it("renders catalog controls and preserves draft state when controls change", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(revampMenuResponse)));
+
+    const { container } = render(<CashierOrderScreen onSessionExpired={vi.fn()} />);
+
+    await addAmericanoLine("Hot", "Normal");
+    fireEvent.click(await screen.findByRole("button", { name: /Latte/ }));
+    fireEvent.click(screen.getByLabelText("Iced +Rp2.000"));
+    fireEvent.click(screen.getByLabelText("Less"));
+    fireEvent.input(screen.getByLabelText("Order note"), { target: { value: "Keep hot line" } });
+    fireEvent.click(screen.getByLabelText("QRIS"));
+
+    expect(screen.getByPlaceholderText("Search menu item...")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "All" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Coffee" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Best Seller" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Iced" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Low Sugar" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "New Arrival" })).toBeVisible();
+    expect(screen.getByLabelText("Sort menu")).toHaveValue("popular");
+    expect(screen.queryByRole("button", { name: /list view/i })).not.toBeInTheDocument();
+    expect(container.querySelector(".catalog-view-toggle")).not.toBeInTheDocument();
+
+    fireEvent.input(screen.getByPlaceholderText("Search menu item..."), { target: { value: "tea" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Tea" }));
+    fireEvent.click(screen.getByRole("button", { name: "Iced" }));
+    fireEvent.change(screen.getByLabelText("Sort menu"), { target: { value: "popular" } });
+
+    expect(screen.getByText("Hot, Normal")).toBeVisible();
+    expect(screen.getByLabelText("Order note")).toHaveValue("Keep hot line");
+    expect(screen.getByLabelText("QRIS")).toBeChecked();
+    expect(screen.getByRole("heading", { level: 3, name: "Configure Latte" })).toBeVisible();
+    expect(screen.getByLabelText("Iced +Rp2.000")).toBeChecked();
+    expect(screen.getByLabelText("Less")).toBeChecked();
+  });
+
+  it("renders filtered menu results as image cards with badges and empty state", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(revampMenuResponse)));
+
+    render(<CashierOrderScreen onSessionExpired={vi.fn()} />);
+
+    const americanoCard = await screen.findByRole("button", { name: /Americano/ });
+    expect(americanoCard.querySelector("img")).toHaveAttribute("src", "/menu/americano.png");
+
+    fireEvent.input(screen.getByPlaceholderText("Search menu item..."), { target: { value: "iced tea" } });
+    const icedTeaCard = screen.getByRole("button", { name: /Iced Tea/ });
+    expect(icedTeaCard.querySelector("img")).toHaveAttribute("src", "/menu/iced-tea.png");
+
+    fireEvent.input(screen.getByPlaceholderText("Search menu item..."), { target: { value: "no-match" } });
+    expect(screen.getByRole("status")).toHaveTextContent("No menu items match the current filters.");
+  });
+
+  it("quick-adds items without required modifiers", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(revampMenuResponse)));
+
+    render(<CashierOrderScreen onSessionExpired={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Muffin/ }));
+
+    expect(screen.getByText("Muffin", { selector: ".cart-line__name" })).toBeVisible();
+    expect(screen.getByText("Rp20.000", { selector: ".cart-line__price" })).toBeVisible();
+  });
+
+  it("cancels customization without changing existing cart lines", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(orderMenuResponse)));
+
+    render(<CashierOrderScreen onSessionExpired={vi.fn()} />);
+
+    await addAmericanoLine("Hot", "Normal");
+    fireEvent.click(await screen.findByRole("button", { name: /Latte/ }));
+    fireEvent.click(screen.getByLabelText("Iced +Rp2.000"));
+    fireEvent.click(screen.getByLabelText("Less"));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel customization" }));
+
+    expect(screen.getByText("Hot, Normal")).toBeVisible();
+    expect(screen.queryByText("Iced, Less")).not.toBeInTheDocument();
+    expect(screen.getByText("Americano", { selector: ".cart-line__name" })).toBeVisible();
   });
 });
 
@@ -295,22 +436,36 @@ describe("CashierOrderScreen payment confirmation", () => {
     await addAmericanoLine("Hot", "Normal");
     fireEvent.click(screen.getByLabelText("QRIS"));
 
-    const confirmTrigger = screen.getByRole("button", { name: "Confirm Paid" });
+    const confirmTrigger = screen.getByRole("button", { name: "Proceed to Payment" });
     fireEvent.click(confirmTrigger);
 
-    const dialog = screen.getByRole("dialog", { name: "Confirm payment" });
+    const dialog = screen.getByRole("dialog", { name: "Payment: QRIS" });
     expect(dialog).toBeVisible();
-    expect(within(dialog).getByText("Total: Rp18.000")).toBeVisible();
-    expect(within(dialog).getByText("Payment: QRIS")).toBeVisible();
-    expect(
-      screen.getByText("This will persist the order as paid. The order cannot be edited after confirmation.")
-    ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Back" })).toHaveFocus();
+    expect(within(dialog).getByText("Rp19.980")).toBeVisible();
+    expect(within(dialog).getByAltText("Static QRIS payment code")).toHaveAttribute("src", "/qris/static-qris.png");
+    expect(within(dialog).getByText("Scan the QR code using your e-wallet or mobile banking.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
 
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("dialog", { name: "Confirm payment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Payment: QRIS" })).not.toBeInTheDocument();
     expect(confirmTrigger).toHaveFocus();
+    expect(screen.getByText("Hot, Normal")).toBeVisible();
+    expect(screen.getByLabelText("QRIS")).toBeChecked();
+  });
+
+  it("opens a cash payment modal without QRIS image", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(orderMenuResponse)));
+
+    render(<CashierOrderScreen onSessionExpired={vi.fn()} />);
+
+    await addAmericanoLine("Hot", "Normal");
+    fireEvent.click(screen.getByLabelText("Cash"));
+    fireEvent.click(screen.getByRole("button", { name: "Proceed to Payment" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Payment: Cash" });
+    expect(within(dialog).getByText("Rp19.980")).toBeVisible();
+    expect(within(dialog).queryByAltText("Static QRIS payment code")).not.toBeInTheDocument();
   });
 
   it("creates a paid order with only backend-accepted request fields", async () => {
@@ -319,7 +474,7 @@ describe("CashierOrderScreen payment confirmation", () => {
         return Promise.resolve(jsonResponse(paidOrderResponse, { status: 201 }));
       }
 
-      return Promise.resolve(jsonResponse(orderMenuResponse));
+      return Promise.resolve(jsonResponse(revampMenuResponse));
     });
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", { randomUUID: () => "11111111-1111-4111-8111-111111111111" });
@@ -329,8 +484,8 @@ describe("CashierOrderScreen payment confirmation", () => {
     await addAmericanoLine("Hot", "Normal");
     fireEvent.input(screen.getByLabelText("Order note"), { target: { value: "Less ice" } });
     fireEvent.click(screen.getByLabelText("Cash"));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Paid" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Confirm payment" })).getByRole("button", { name: "Confirm Paid" }));
+    fireEvent.click(screen.getByRole("button", { name: "Proceed to Payment" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Payment: Cash" })).getByRole("button", { name: "Confirm Paid" }));
 
     expect(await screen.findByText("Paid order created")).toBeVisible();
     expect(screen.getByText("Queue No. 001")).toBeVisible();
@@ -375,13 +530,13 @@ describe("CashierOrderScreen payment confirmation", () => {
 
     await addAmericanoLine("Hot", "Normal");
     fireEvent.click(screen.getByLabelText("Cash"));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Paid" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Confirm payment" })).getByRole("button", { name: "Confirm Paid" }));
+    fireEvent.click(screen.getByRole("button", { name: "Proceed to Payment" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Payment: Cash" })).getByRole("button", { name: "Confirm Paid" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("The order is invalid. Check the draft and retry.");
     expect(screen.getByText("Hot, Normal")).toBeVisible();
 
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Confirm payment" })).getByRole("button", { name: "Confirm Paid" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Payment: Cash" })).getByRole("button", { name: "Confirm Paid" }));
 
     expect(await screen.findByText("Paid order created")).toBeVisible();
     expect(createBodies).toHaveLength(2);
@@ -451,7 +606,7 @@ describe("CashierOrderScreen paid order detail", () => {
 
     expect(await screen.findByRole("heading", { level: 2, name: "New Order" })).toBeVisible();
     expect(screen.getByText("No items added yet.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Print Ticket" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Print Ticket" })).not.toBeInTheDocument();
   });
 
   it("cancels a paid order after confirmation and disables paid-only actions when cancelled", async () => {
@@ -535,8 +690,8 @@ async function createPaidOrderInScreen() {
   await addAmericanoLine("Hot", "Normal");
   fireEvent.input(screen.getByLabelText("Order note"), { target: { value: "Less ice" } });
   fireEvent.click(screen.getByLabelText("Cash"));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm Paid" }));
-  fireEvent.click(within(screen.getByRole("dialog", { name: "Confirm payment" })).getByRole("button", { name: "Confirm Paid" }));
+  fireEvent.click(screen.getByRole("button", { name: "Proceed to Payment" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Payment: Cash" })).getByRole("button", { name: "Confirm Paid" }));
   await screen.findByText("Paid order created");
 }
 

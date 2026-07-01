@@ -31,6 +31,13 @@ type CashierMenuItem struct {
 	Name           string
 	Slug           string
 	PriceRp        int64
+	ImagePath      string
+	PopularityRank int64
+	BestSeller     bool
+	Promo          bool
+	Iced           bool
+	LowSugar       bool
+	NewArrival     bool
 	ModifierGroups []CashierModifierGroup
 }
 

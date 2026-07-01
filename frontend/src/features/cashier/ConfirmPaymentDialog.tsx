@@ -20,6 +20,8 @@ export function ConfirmPaymentDialog({
   onConfirm
 }: ConfirmPaymentDialogProps) {
   const backButtonRef = useRef<HTMLButtonElement>(null);
+  const paymentLabel = paymentMethod === "qris" ? "QRIS" : "Cash";
+  const title = `Payment: ${paymentLabel}`;
 
   useEffect(() => {
     backButtonRef.current?.focus();
@@ -33,18 +35,30 @@ export function ConfirmPaymentDialog({
         className="dialog-panel"
         role="dialog"
       >
-        <h2 id="confirm-payment-title">Confirm payment</h2>
-        <p>This will persist the order as paid. The order cannot be edited after confirmation.</p>
-        <dl className="dialog-summary">
-          <div>
-            <dt>Total</dt>
-            <dd>Total: {formatRupiah(totalRp)}</dd>
+        <div className="dialog-panel__header">
+          <h2 id="confirm-payment-title">{title}</h2>
+          <button
+            aria-label="Close payment"
+            className="dialog-close-button"
+            disabled={isSubmitting}
+            onClick={onBack}
+            type="button"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <div className="dialog-total">
+          <span>Total Amount</span>
+          <strong>{formatRupiah(totalRp)}</strong>
+        </div>
+        {paymentMethod === "qris" ? (
+          <div className="qris-panel qris-panel--dialog">
+            <div className="qris-code-card">
+              <img alt="Static QRIS payment code" src="/qris/static-qris.png" />
+            </div>
+            <p>Scan the QR code using your e-wallet or mobile banking.</p>
           </div>
-          <div>
-            <dt>Payment</dt>
-            <dd>Payment: {paymentMethod === "qris" ? "QRIS" : "Cash"}</dd>
-          </div>
-        </dl>
+        ) : null}
         {error ? (
           <p className="cashier-alert" role="alert">
             {error}
@@ -52,21 +66,21 @@ export function ConfirmPaymentDialog({
         ) : null}
         <div className="dialog-actions">
           <button
-            className="button button--secondary"
-            disabled={isSubmitting}
-            onClick={onBack}
-            ref={backButtonRef}
-            type="button"
-          >
-            Back
-          </button>
-          <button
             className="button button--primary"
             disabled={isSubmitting}
             onClick={onConfirm}
             type="button"
           >
             {isSubmitting ? "Confirming..." : "Confirm Paid"}
+          </button>
+          <button
+            className="button button--secondary"
+            disabled={isSubmitting}
+            onClick={onBack}
+            ref={backButtonRef}
+            type="button"
+          >
+            Cancel
           </button>
         </div>
       </section>

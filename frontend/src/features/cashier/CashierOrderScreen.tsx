@@ -2,11 +2,17 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { formatRupiah } from "../../lib/format";
 import { cancelPaidOrder, createPaidOrder, getCashierMenu } from "../../lib/pos";
 import { CancelOrderDialog } from "./CancelOrderDialog";
+import {
+  buildCatalogCategories,
+  buildCatalogItems,
+  type CatalogSort,
+  type QuickFilter
+} from "./catalogView";
 import { ConfirmPaymentDialog } from "./ConfirmPaymentDialog";
 import { PaidOrderDetail as PaidOrderDetailView } from "./PaidOrderDetail";
 import {
   buildCreatePaidOrderPayload,
-  calculateDraftTotal,
+  calculateDraftBreakdown,
   calculateLineTotal,
   clampQuantity,
   createCartLine,
@@ -26,11 +32,22 @@ type MenuState =
   | { status: "empty" }
   | { status: "error"; message: string };
 
+const quickFilterOptions: { label: string; value: QuickFilter }[] = [
+  { label: "🔥 Best Seller", value: "bestSeller" },
+  { label: "❄️ Iced", value: "iced" },
+  { label: "◇ Low Sugar", value: "lowSugar" },
+  { label: "✨ New Arrival", value: "newArrival" }
+];
+
 export function CashierOrderScreen({ onSessionExpired }: CashierOrderScreenProps) {
   const [menuState, setMenuState] = useState<MenuState>({ status: "loading" });
   const [selectedItem, setSelectedItem] = useState<MenuItem | undefined>();
   const [selectedModifiers, setSelectedModifiers] = useState<SelectedModifiers>({});
   const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategorySlug, setActiveCategorySlug] = useState("all");
+  const [quickFilters, setQuickFilters] = useState<QuickFilter[]>([]);
+  const [catalogSort, setCatalogSort] = useState<CatalogSort>("popular");
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
   const [note, setNote] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | undefined>();
@@ -143,7 +160,27 @@ export function CashierOrderScreen({ onSessionExpired }: CashierOrderScreenProps
 
   const draft = { lines: cartLines, note, paymentMethod };
   const validation = validateDraft(draft);
-  const totalRp = calculateDraftTotal(cartLines);
+  const breakdown = calculateDraftBreakdown(cartLines);
+  const totalRp = breakdown.totalRp;
+  const catalogCategories = buildCatalogCategories(menuState.menu);
+  const catalogItems = buildCatalogItems(menuState.menu, {
+    categorySlug: activeCategorySlug,
+    quickFilters,
+    searchQuery,
+    sort: catalogSort
+  });
+
+  function addCartLine(item: MenuItem, quantity: number, modifiers: SelectedModifiers) {
+    setCartLines((current) => [
+      ...current,
+      createCartLine({
+        id: newCartLineId(),
+        item,
+        quantity,
+        selectedModifiers: modifiers
+      })
+    ]);
+  }
 
   async function handleConfirmPaidSubmit() {
     if (!paymentMethod || validation.isValid === false) {
@@ -218,68 +255,153 @@ export function CashierOrderScreen({ onSessionExpired }: CashierOrderScreenProps
         </div>
       </div>
 
+      <label className="catalog-search">
+        <span className="sr-only">Search menu item</span>
+        <input
+          onInput={(event) => setSearchQuery((event.currentTarget as HTMLInputElement).value)}
+          placeholder="Search menu item..."
+          type="search"
+          value={searchQuery}
+        />
+      </label>
+
       <div className="cashier-layout">
         <aside className="cashier-sidebar">
           <section className="cashier-panel menu-panel" aria-labelledby="menu-title">
-            <h3 id="menu-title">Menu</h3>
-            {menuState.menu.categories.map((category) => (
-              <div className="menu-category" key={category.slug}>
-                <h4>{category.name}</h4>
-                <div className="menu-list">
-                  {category.items.map((item) => (
-                    <button
-                      aria-pressed={selectedItem?.slug === item.slug}
-                      className="menu-item"
-                      key={item.slug}
-                      onClick={() => {
-                        setSelectedItem(item);
+            <div className="catalog-toolbar">
+              <div>
+                <h3 id="menu-title">Menu</h3>
+                <p>Choose an item from the catalog.</p>
+              </div>
+            </div>
+
+            <div className="catalog-tabs" role="tablist" aria-label="Menu categories">
+              {catalogCategories.map((category) => (
+                <button
+                  aria-selected={activeCategorySlug === category.slug}
+                  className={activeCategorySlug === category.slug ? "catalog-tab catalog-tab--active" : "catalog-tab"}
+                  key={category.slug}
+                  onClick={() => setActiveCategorySlug(category.slug)}
+                  role="tab"
+                  type="button"
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="catalog-filters" aria-label="Quick filters">
+              <span className="catalog-filters__label">Quick Filters:</span>
+              {quickFilterOptions.map((filter) => (
+                <button
+                  aria-label={filter.value === "bestSeller" ? "Best Seller" : filter.label.replace(/^[^A-Za-z]+ /, "")}
+                  aria-pressed={quickFilters.includes(filter.value)}
+                  className={
+                    quickFilters.includes(filter.value)
+                      ? "catalog-filter catalog-filter--active"
+                      : "catalog-filter"
+                  }
+                  key={filter.value}
+                  onClick={() => {
+                    setQuickFilters((current) =>
+                      current.includes(filter.value)
+                        ? current.filter((value) => value !== filter.value)
+                        : [...current, filter.value]
+                    );
+                  }}
+                  type="button"
+                >
+                  {filter.label}
+                </button>
+              ))}
+
+              <label className="catalog-sort">
+                <span>Sort by:</span>
+                <select
+                  aria-label="Sort menu"
+                  onChange={(event) => setCatalogSort((event.currentTarget as HTMLSelectElement).value as CatalogSort)}
+                  value={catalogSort}
+                >
+                  <option value="popular">Popular</option>
+                </select>
+              </label>
+            </div>
+
+            {catalogItems.length === 0 ? (
+              <p className="catalog-empty" role="status">
+                No menu items match the current filters.
+              </p>
+            ) : (
+              <div className="menu-list menu-list--grid">
+                {catalogItems.map(({ item }) => (
+                  <button
+                    aria-pressed={selectedItem?.slug === item.slug}
+                    className="menu-item menu-card"
+                    key={item.slug}
+                    onClick={() => {
+                      if (!hasRequiredModifierGroups(item)) {
+                        addCartLine(item, 1, {});
+                        setSelectedItem(undefined);
                         setSelectedModifiers({});
                         setSelectedQuantity(1);
-                      }}
-                      type="button"
-                    >
-                      <span className="menu-item__thumb" aria-hidden="true">
-                        <img alt="" src={menuItemImageSrc(item)} />
-                      </span>
-                      <span className="menu-item__content">
-                        <span>{item.name}</span>
-                        <span>{formatRupiah(item.priceRp)}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                        return;
+                      }
+
+                      setSelectedItem(item);
+                      setSelectedModifiers({});
+                      setSelectedQuantity(1);
+                    }}
+                    type="button"
+                  >
+                    <span className="menu-item__thumb" aria-hidden="true">
+                      <img alt="" src={menuItemImageSrc(item)} />
+                    </span>
+                    <span className="menu-item__content">
+                      {menuItemBadges(item).length > 0 ? (
+                        <span className="menu-card__badges" aria-hidden="true">
+                          {menuItemBadges(item).map((badge) => (
+                            <span className="menu-card__badge" key={badge}>
+                              {badge}
+                            </span>
+                          ))}
+                        </span>
+                      ) : null}
+                      <span>{item.name}</span>
+                      <span>{formatRupiah(item.priceRp)}</span>
+                    </span>
+                  </button>
+                ))}
               </div>
-            ))}
+            )}
           </section>
 
-          <h3 className="cashier-sidebar__section-title">Selected item</h3>
+          {selectedItem ? <h3 className="cashier-sidebar__section-title">Selected item</h3> : null}
 
-          <SelectedItemPanel
-            item={selectedItem}
-            quantity={selectedQuantity}
-            selectedModifiers={selectedModifiers}
-            onModifierChange={(groupSlug, optionSlug) =>
-              setSelectedModifiers((current) => ({ ...current, [groupSlug]: optionSlug }))
-            }
-            onQuantityChange={(nextQuantity) => setSelectedQuantity(clampQuantity(nextQuantity))}
-            onAddLine={() => {
-              if (!selectedItem || !hasRequiredModifiers(selectedItem, selectedModifiers)) {
-                return;
+          {selectedItem ? (
+            <SelectedItemPanel
+              item={selectedItem}
+              quantity={selectedQuantity}
+              selectedModifiers={selectedModifiers}
+              onModifierChange={(groupSlug, optionSlug) =>
+                setSelectedModifiers((current) => ({ ...current, [groupSlug]: optionSlug }))
               }
+              onQuantityChange={(nextQuantity) => setSelectedQuantity(clampQuantity(nextQuantity))}
+              onCancel={() => {
+                setSelectedItem(undefined);
+                setSelectedModifiers({});
+                setSelectedQuantity(1);
+              }}
+              onAddLine={() => {
+                if (!selectedItem || !hasRequiredModifiers(selectedItem, selectedModifiers)) {
+                  return;
+                }
 
-              setCartLines((current) => [
-                ...current,
-                createCartLine({
-                  id: newCartLineId(),
-                  item: selectedItem,
-                  quantity: selectedQuantity,
-                  selectedModifiers
-                })
-              ]);
-              setSelectedModifiers({});
-              setSelectedQuantity(1);
-            }}
-          />
+                addCartLine(selectedItem, selectedQuantity, selectedModifiers);
+                setSelectedModifiers({});
+                setSelectedQuantity(1);
+              }}
+            />
+          ) : null}
         </aside>
 
         <CurrentOrderPanel
@@ -288,7 +410,9 @@ export function CashierOrderScreen({ onSessionExpired }: CashierOrderScreenProps
           lines={cartLines}
           note={note}
           paymentMethod={paymentMethod}
-          totalRp={totalRp}
+          subtotalRp={breakdown.subtotalRp}
+          taxRp={breakdown.taxRp}
+          totalRp={breakdown.totalRp}
           onNoteChange={setNote}
           onConfirmClick={() => {
             setPaymentError(undefined);
@@ -305,7 +429,6 @@ export function CashierOrderScreen({ onSessionExpired }: CashierOrderScreenProps
           onRemoveLine={(lineId) => setCartLines((current) => current.filter((line) => line.id !== lineId))}
         />
 
-        <PaymentPreviewPanel paymentMethod={paymentMethod} />
       </div>
 
       {isConfirmDialogOpen ? (
@@ -332,6 +455,7 @@ type SelectedItemPanelProps = {
   selectedModifiers: SelectedModifiers;
   onModifierChange: (groupSlug: string, optionSlug: string) => void;
   onQuantityChange: (quantity: number) => void;
+  onCancel: () => void;
   onAddLine: () => void;
 };
 
@@ -341,6 +465,7 @@ function SelectedItemPanel({
   selectedModifiers,
   onModifierChange,
   onQuantityChange,
+  onCancel,
   onAddLine
 }: SelectedItemPanelProps) {
   if (!item) {
@@ -422,9 +547,14 @@ function SelectedItemPanel({
         </div>
       </div>
 
-      <button className="button button--primary button--add-item" disabled={!canAdd} onClick={onAddLine} type="button">
-        <span>Add Item To Order</span>
-      </button>
+      <div className="selected-item-panel__actions">
+        <button className="button button--secondary" onClick={onCancel} type="button">
+          <span>Cancel customization</span>
+        </button>
+        <button className="button button--primary button--add-item" disabled={!canAdd} onClick={onAddLine} type="button">
+          <span>Add Item To Order</span>
+        </button>
+      </div>
     </section>
   );
 }
@@ -435,6 +565,8 @@ type CurrentOrderPanelProps = {
   lines: CartLine[];
   note: string;
   paymentMethod: PaymentMethod | undefined;
+  subtotalRp: number;
+  taxRp: number;
   totalRp: number;
   onConfirmClick: () => void;
   onNoteChange: (note: string) => void;
@@ -449,6 +581,8 @@ function CurrentOrderPanel({
   lines,
   note,
   paymentMethod,
+  subtotalRp,
+  taxRp,
   totalRp,
   onConfirmClick,
   onNoteChange,
@@ -458,7 +592,10 @@ function CurrentOrderPanel({
 }: CurrentOrderPanelProps) {
   return (
     <section className="cashier-panel current-order-panel" aria-labelledby="current-order-title">
-      <h3 id="current-order-title">Current Order</h3>
+      <div className="current-order-panel__header">
+        <h3 id="current-order-title">Current Order</h3>
+        <p>#ORD-0142</p>
+      </div>
 
       {lines.length === 0 ? (
         <p>No items added yet.</p>
@@ -469,6 +606,9 @@ function CurrentOrderPanel({
               <div>
                 <p className="cart-line__quantity">{line.quantity}x</p>
               </div>
+              <span className="cart-line__thumb" aria-hidden="true">
+                <img alt="" src={menuItemImageSrc(line.item)} />
+              </span>
               <div className="cart-line__main">
                 <p className="cart-line__name">{line.item.name}</p>
                 <p>{formatModifierSummary(line)}</p>
@@ -496,7 +636,7 @@ function CurrentOrderPanel({
                 </div>
                 <button
                   aria-label={`Remove ${line.item.name}`}
-                  className="button button--secondary button--compact button--remove-line"
+                  className="button button--secondary button--remove-line"
                   onClick={() => onRemoveLine(line.id)}
                   type="button"
                 >
@@ -507,27 +647,6 @@ function CurrentOrderPanel({
           ))}
         </ul>
       )}
-
-      <div className="order-actions">
-        <button
-          className="button button--primary button--confirm-paid"
-          disabled={!canConfirm}
-          onClick={onConfirmClick}
-          ref={confirmButtonRef}
-          type="button"
-        >
-          <span>Confirm Paid</span>
-        </button>
-        <button aria-label="Print Ticket" className="button button--secondary button--print-ticket" disabled type="button">
-          <span>
-            <span>Print Ticket</span>
-            <small aria-hidden="true">(Disabled)</small>
-          </span>
-        </button>
-        <p>
-          Status: <span>Not paid</span>
-        </p>
-      </div>
 
       <label className="note-field">
         <span>Order note</span>
@@ -544,68 +663,51 @@ function CurrentOrderPanel({
       <dl className="order-total">
         <div>
           <dt>Subtotal</dt>
-          <dd>{formatRupiah(totalRp)}</dd>
+          <dd>{formatRupiah(subtotalRp)}</dd>
+        </div>
+        <div className="order-total__tax">
+          <dt>Tax</dt>
+          <dd>{formatRupiah(taxRp)}</dd>
         </div>
         <div>
           <dt>Total</dt>
           <dd className="payment-total">{formatRupiah(totalRp)}</dd>
         </div>
-        <div className="order-total__payment">
-          <dt>Payment method <span>(required)</span></dt>
-          <dd>
-            <fieldset className="payment-methods">
-              <legend>Payment method</legend>
-              <label className="option-control option-control--cash" htmlFor="payment-cash">
-                <input
-                  checked={paymentMethod === "cash"}
-                  id="payment-cash"
-                  name="payment-method"
-                  onChange={() => onPaymentMethodChange("cash")}
-                  type="radio"
-                />
-                <span className="option-control__label">Cash</span>
-              </label>
-              <label className="option-control option-control--qris" htmlFor="payment-qris">
-                <input
-                  checked={paymentMethod === "qris"}
-                  id="payment-qris"
-                  name="payment-method"
-                  onChange={() => onPaymentMethodChange("qris")}
-                  type="radio"
-                />
-                <span className="option-control__label">QRIS</span>
-              </label>
-            </fieldset>
-          </dd>
-        </div>
       </dl>
-    </section>
-  );
-}
 
-type PaymentPreviewPanelProps = {
-  paymentMethod: PaymentMethod | undefined;
-};
+      <fieldset className="payment-methods order-payment-methods">
+        <legend>Payment Method</legend>
+        <label className="option-control option-control--cash" htmlFor="payment-cash">
+          <input
+            checked={paymentMethod === "cash"}
+            id="payment-cash"
+            name="payment-method"
+            onChange={() => onPaymentMethodChange("cash")}
+            type="radio"
+          />
+          <span className="option-control__label">Cash</span>
+        </label>
+        <label className="option-control option-control--qris" htmlFor="payment-qris">
+          <input
+            checked={paymentMethod === "qris"}
+            id="payment-qris"
+            name="payment-method"
+            onChange={() => onPaymentMethodChange("qris")}
+            type="radio"
+          />
+          <span className="option-control__label">QRIS</span>
+        </label>
+      </fieldset>
 
-function PaymentPreviewPanel({ paymentMethod }: PaymentPreviewPanelProps) {
-  return (
-    <section className="cashier-panel payment-panel" aria-labelledby="payment-title">
-      <h3 id="payment-title">Payment</h3>
-      <p className="payment-preview-title">
-        Payment: {paymentMethod ? paymentMethod.toUpperCase() : "Select method"}
-      </p>
-
-      {paymentMethod === "qris" ? (
-        <div className="qris-panel">
-          <div className="qris-code-card">
-            <img alt="Static QRIS payment code" src="/qris/static-qris.png" />
-          </div>
-          <p>Check the customer's QRIS payment manually before confirming paid.</p>
-          <p className="qris-panel__meta">This is a static QRIS image</p>
-        </div>
-      ) : (
-        <p className="payment-panel__empty">Choose Cash or QRIS to prepare the payment confirmation.</p>
-      )}
+      <button
+        className="button button--primary button--confirm-paid"
+        disabled={!canConfirm}
+        onClick={onConfirmClick}
+        ref={confirmButtonRef}
+        type="button"
+      >
+        <span>Proceed to Payment</span>
+      </button>
     </section>
   );
 }
@@ -614,8 +716,34 @@ function hasRequiredModifiers(item: MenuItem, selectedModifiers: SelectedModifie
   return item.modifierGroups.every((group) => !group.required || Boolean(selectedModifiers[group.slug]));
 }
 
+function hasRequiredModifierGroups(item: MenuItem): boolean {
+  return item.modifierGroups.some((group) => group.required);
+}
+
 function menuItemImageSrc(item: MenuItem): string {
-  return item.slug.includes("latte") ? "/menu/latte.png" : "/menu/americano.png";
+  if (item.imagePath) {
+    return item.imagePath;
+  }
+
+  const fallbackBySlug: Record<string, string> = {
+    americano: "/menu/americano.png",
+    latte: "/menu/latte.png"
+  };
+
+  return fallbackBySlug[item.slug] ?? "/menu/americano.png";
+}
+
+function menuItemBadges(item: MenuItem): string[] {
+  if (item.bestSeller) {
+    return ["Best Seller"];
+  }
+  if (item.newArrival) {
+    return ["New Arrival"];
+  }
+  if (item.promo) {
+    return ["Promo"];
+  }
+  return [];
 }
 
 function optionControlClass(optionSlug: string): string {
